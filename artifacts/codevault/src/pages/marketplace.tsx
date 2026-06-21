@@ -55,7 +55,7 @@ export default function Marketplace() {
         <div className="z-10">
           <h1 className="text-3xl font-bold tracking-tight mb-2">Marketplace</h1>
           <p className="text-primary-foreground/80 max-w-xl">
-            Discover templates, AI agents, and integrations to accelerate your workflow.
+            Discover trading strategies, AI signal bots, and market integrations built by the community.
           </p>
         </div>
         
@@ -70,11 +70,11 @@ export default function Marketplace() {
             <div className="space-y-4 py-4">
               <div className="space-y-2">
                 <Label>Title</Label>
-                <Input value={newItem.title} onChange={e => setNewItem({...newItem, title: e.target.value})} placeholder="e.g. Next.js SaaS Starter" />
+                <Input value={newItem.title} onChange={e => setNewItem({...newItem, title: e.target.value})} placeholder="e.g. BTC Mean-Reversion Bot" />
               </div>
               <div className="space-y-2">
                 <Label>Description</Label>
-                <Textarea value={newItem.description} onChange={e => setNewItem({...newItem, description: e.target.value})} placeholder="What does this do?" />
+                <Textarea value={newItem.description} onChange={e => setNewItem({...newItem, description: e.target.value})} placeholder="What does this strategy do?" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -82,10 +82,10 @@ export default function Marketplace() {
                   <Select value={newItem.category} onValueChange={v => setNewItem({...newItem, category: v})}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="template">Template</SelectItem>
-                      <SelectItem value="bot">AI Bot</SelectItem>
-                      <SelectItem value="integration">Integration</SelectItem>
-                      <SelectItem value="tool">Tool</SelectItem>
+                      <SelectItem value="template">Strategy</SelectItem>
+                      <SelectItem value="bot">Signal Bot</SelectItem>
+                      <SelectItem value="integration">Exchange Integration</SelectItem>
+                      <SelectItem value="tool">Analysis Tool</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

@@ -23,9 +23,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const navItems = [
     { href: "/", label: "Dashboard", icon: Home },
-    { href: "/projects", label: "Projects", icon: Folder },
-    { href: "/ai-builder", label: "AI Builder", icon: Bot },
-    { href: "/deployments", label: "Deployments", icon: Cloud },
+    { href: "/projects", label: "Strategies", icon: Folder },
+    { href: "/ai-builder", label: "AI Analyst", icon: Bot },
+    { href: "/deployments", label: "Bot Deployments", icon: Cloud },
     { href: "/marketplace", label: "Marketplace", icon: ShoppingCart },
     { href: "/trading", label: "Trading Signals", icon: TrendingUp },
     { href: "/profile", label: "Profile", icon: User },

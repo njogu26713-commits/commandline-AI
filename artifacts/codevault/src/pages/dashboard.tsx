@@ -28,7 +28,7 @@ export default function Dashboard() {
   if (isLoading) {
     return (
       <PageTransition className="space-y-6">
-        <h1 className="text-3xl font-bold tracking-tight">Overview</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Trading Overview</h1>
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-32 rounded-xl" />)}
         </div>
@@ -43,13 +43,13 @@ export default function Dashboard() {
   return (
     <PageTransition className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold tracking-tight">Overview</h1>
+        <h1 className="text-3xl font-bold tracking-tight">Trading Overview</h1>
       </div>
       
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total Projects</CardTitle>
+            <CardTitle className="text-sm font-medium">Active Strategies</CardTitle>
             <Code className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
@@ -61,25 +61,25 @@ export default function Dashboard() {
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Active Deployments</CardTitle>
+            <CardTitle className="text-sm font-medium">Live Bots</CardTitle>
             <CloudLightning className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats?.activeDeployments ?? 0}</div>
             <p className="text-xs text-muted-foreground">
-              {stats?.deploymentsToday ?? 0} today
+              {stats?.deploymentsToday ?? 0} deployed today
             </p>
           </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">AI Tokens Used</CardTitle>
+            <CardTitle className="text-sm font-medium">Signals Sent</CardTitle>
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{(stats?.aiTokensUsed ?? 0).toLocaleString()}</div>
             <p className="text-xs text-muted-foreground">
-              {aiUsage?.requestsToday ?? 0} requests today
+              {aiUsage?.requestsToday ?? 0} signals today
             </p>
           </CardContent>
         </Card>
@@ -101,8 +101,8 @@ export default function Dashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
         <Card className="col-span-4">
           <CardHeader>
-            <CardTitle>Revenue</CardTitle>
-            <CardDescription>Monthly revenue growth over time</CardDescription>
+            <CardTitle>Subscription Revenue</CardTitle>
+            <CardDescription>Monthly subscription revenue growth</CardDescription>
           </CardHeader>
           <CardContent className="pl-2">
             <div className="h-[300px]">
@@ -148,8 +148,8 @@ export default function Dashboard() {
 
         <Card className="col-span-3">
           <CardHeader>
-            <CardTitle>AI Usage</CardTitle>
-            <CardDescription>Tokens consumed daily</CardDescription>
+            <CardTitle>Signal Activity</CardTitle>
+            <CardDescription>Signals broadcast daily</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="h-[300px]">
@@ -186,7 +186,7 @@ export default function Dashboard() {
         <Card className="col-span-4">
           <CardHeader>
             <CardTitle>Recent Activity</CardTitle>
-            <CardDescription>Latest actions across your projects</CardDescription>
+            <CardDescription>Latest signal and trading activity</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-8">
@@ -211,8 +211,8 @@ export default function Dashboard() {
         </Card>
         <Card className="col-span-3">
           <CardHeader>
-            <CardTitle>Recent Deployments</CardTitle>
-            <CardDescription>Status of your latest builds</CardDescription>
+            <CardTitle>Active Bots</CardTitle>
+            <CardDescription>Status of your live trading bots</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-6">

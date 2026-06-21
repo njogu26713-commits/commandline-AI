@@ -44,7 +44,7 @@ export default function Deployments() {
       onSuccess: () => {
         setIsCreateOpen(false);
         queryClient.invalidateQueries({ queryKey: getListDeploymentsQueryKey() });
-        toast({ title: "Deployment triggered" });
+        toast({ title: "Bot deployed successfully" });
       }
     });
   };
@@ -63,21 +63,21 @@ export default function Deployments() {
     <PageTransition className="space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Deployments</h1>
-          <p className="text-muted-foreground">Monitor and manage your app environments.</p>
+          <h1 className="text-3xl font-bold tracking-tight">Bot Deployments</h1>
+          <p className="text-muted-foreground">Monitor and manage your live trading bots.</p>
         </div>
 
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
-            <Button className="gap-2"><Plus className="w-4 h-4" /> New Deployment</Button>
+            <Button className="gap-2"><Plus className="w-4 h-4" /> Deploy Bot</Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Trigger Deployment</DialogTitle>
+              <DialogTitle>Deploy Trading Bot</DialogTitle>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label>Project ID</Label>
+                <Label>Strategy ID</Label>
                 <Input value={newDep.projectId} onChange={e => setNewDep({...newDep, projectId: e.target.value})} placeholder="e.g. 1" type="number" />
               </div>
               <div className="space-y-2">
@@ -96,9 +96,9 @@ export default function Deployments() {
                 <Select value={newDep.provider} onValueChange={v => setNewDep({...newDep, provider: v})}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="vercel">Vercel</SelectItem>
+                    <SelectItem value="vercel">AWS</SelectItem>
                     <SelectItem value="railway">Railway</SelectItem>
-                    <SelectItem value="netlify">Netlify</SelectItem>
+                    <SelectItem value="netlify">DigitalOcean</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -106,7 +106,7 @@ export default function Deployments() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
               <Button onClick={handleDeploy} disabled={createDeployment.isPending || !newDep.projectId}>
-                Deploy
+                Deploy Bot
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -117,7 +117,7 @@ export default function Deployments() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Project</TableHead>
+              <TableHead>Strategy</TableHead>
               <TableHead>Environment</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Provider</TableHead>
@@ -142,7 +142,7 @@ export default function Deployments() {
             ) : deployments?.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                  No deployments found.
+                  No bots deployed yet.
                 </TableCell>
               </TableRow>
             ) : (
@@ -179,7 +179,7 @@ export default function Deployments() {
                         </DialogTrigger>
                         <DialogContent className="max-w-3xl">
                           <DialogHeader>
-                            <DialogTitle>Build Logs: {dep.projectName}</DialogTitle>
+                            <DialogTitle>Bot Logs: {dep.projectName}</DialogTitle>
                           </DialogHeader>
                           <div className="bg-black text-gray-300 p-4 rounded-md h-[400px] overflow-y-auto font-mono text-xs">
                             {logsLoading ? (
@@ -194,7 +194,7 @@ export default function Deployments() {
                                 </div>
                               ))
                             ) : (
-                              <div className="text-gray-500">No logs available for this deployment.</div>
+                              <div className="text-gray-500">No logs available for this bot.</div>
                             )}
                           </div>
                         </DialogContent>

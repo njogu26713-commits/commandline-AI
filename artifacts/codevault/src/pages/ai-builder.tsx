@@ -137,7 +137,7 @@ export default function AiBuilder() {
                   <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
                     <Bot className="w-8 h-8 text-primary" />
                   </div>
-                  <p>How can I help you build today?</p>
+                  <p>How can I help you trade today?</p>
                 </div>
               ) : (
                 messages?.map((msg) => (
@@ -208,7 +208,7 @@ export default function AiBuilder() {
           </>
         ) : (
           <div className="flex-1 flex items-center justify-center text-muted-foreground">
-            Select or create a session to start building.
+            Select or create a session to start analyzing.
           </div>
         )}
       </div>

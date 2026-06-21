@@ -38,7 +38,7 @@ export default function Projects() {
         setIsCreateOpen(false);
         setNewProject({ name: "", description: "", language: "TypeScript" });
         queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
-        toast({ title: "Project created", description: "Your project has been created successfully." });
+        toast({ title: "Strategy created", description: "Your trading strategy has been created successfully." });
       }
     });
   };
@@ -46,11 +46,11 @@ export default function Projects() {
   const handleDelete = (e: React.MouseEvent, id: number) => {
     e.preventDefault();
     e.stopPropagation();
-    if (confirm("Are you sure you want to delete this project?")) {
+    if (confirm("Are you sure you want to delete this strategy?")) {
       deleteProject.mutate({ id }, {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
-          toast({ title: "Project deleted", description: "Your project has been deleted successfully." });
+          toast({ title: "Strategy deleted", description: "Your trading strategy has been deleted successfully." });
         }
       });
     }
@@ -60,25 +60,25 @@ export default function Projects() {
     <PageTransition className="space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Projects</h1>
-          <p className="text-muted-foreground">Manage and deploy your codebase.</p>
+          <h1 className="text-3xl font-bold tracking-tight">Strategies</h1>
+          <p className="text-muted-foreground">Manage and run your AI trading strategies.</p>
         </div>
         
         <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
           <DialogTrigger asChild>
-            <Button className="gap-2"><Plus className="w-4 h-4" /> New Project</Button>
+            <Button className="gap-2"><Plus className="w-4 h-4" /> New Strategy</Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Create Project</DialogTitle>
-              <DialogDescription>Add a new repository to your workspace.</DialogDescription>
+              <DialogTitle>Create Strategy</DialogTitle>
+              <DialogDescription>Add a new AI trading strategy to your account.</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
-                <Label htmlFor="name">Project Name</Label>
+                <Label htmlFor="name">Strategy Name</Label>
                 <Input 
                   id="name" 
-                  placeholder="e.g. awesome-api" 
+                  placeholder="e.g. BTC-USDT Scalper" 
                   value={newProject.name}
                   onChange={(e) => setNewProject({...newProject, name: e.target.value})}
                 />
@@ -87,16 +87,16 @@ export default function Projects() {
                 <Label htmlFor="description">Description</Label>
                 <Textarea 
                   id="description" 
-                  placeholder="Brief description of the project" 
+                  placeholder="Brief description of the strategy" 
                   value={newProject.description}
                   onChange={(e) => setNewProject({...newProject, description: e.target.value})}
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="language">Primary Language</Label>
+                <Label htmlFor="language">Asset Class</Label>
                 <Input 
                   id="language" 
-                  placeholder="e.g. TypeScript, Rust, Go" 
+                  placeholder="e.g. Crypto, Forex, Stocks" 
                   value={newProject.language}
                   onChange={(e) => setNewProject({...newProject, language: e.target.value})}
                 />
@@ -105,7 +105,7 @@ export default function Projects() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
               <Button onClick={handleCreate} disabled={createProject.isPending || !newProject.name}>
-                {createProject.isPending ? "Creating..." : "Create Project"}
+                {createProject.isPending ? "Creating..." : "Create Strategy"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -115,7 +115,7 @@ export default function Projects() {
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input 
-          placeholder="Search projects..." 
+          placeholder="Search strategies..." 
           className="pl-9 max-w-md bg-background"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -128,10 +128,10 @@ export default function Projects() {
         </div>
       ) : filteredProjects?.length === 0 ? (
         <div className="text-center py-24 border rounded-xl border-dashed">
-          <h3 className="text-lg font-semibold">No projects found</h3>
-          <p className="text-muted-foreground mt-1">Get started by creating a new project.</p>
+          <h3 className="text-lg font-semibold">No strategies found</h3>
+          <p className="text-muted-foreground mt-1">Get started by creating your first trading strategy.</p>
           <Button variant="outline" className="mt-4 gap-2" onClick={() => setIsCreateOpen(true)}>
-            <Plus className="w-4 h-4" /> Create Project
+            <Plus className="w-4 h-4" /> Create Strategy
           </Button>
         </div>
       ) : (
