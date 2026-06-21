@@ -1,22 +1,36 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: CodeVault API specification
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: dashboard
+    description: Dashboard analytics
+  - name: projects
+    description: Project management
+  - name: ai
+    description: AI builder
+  - name: repository
+    description: Repository management
+  - name: deployments
+    description: Deployment operations
+  - name: marketplace
+    description: Marketplace
+  - name: users
+    description: User profiles
+  - name: trading
+    description: AI Trading Signal Bot
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
@@ -24,13 +38,1126 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+
+  # Dashboard
+  /dashboard/stats:
+    get:
+      operationId: getDashboardStats
+      tags: [dashboard]
+      summary: Get dashboard statistics
+      responses:
+        "200":
+          description: Dashboard stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardStats"
+
+  /dashboard/activity:
+    get:
+      operationId: getDashboardActivity
+      tags: [dashboard]
+      summary: Get recent activity feed
+      responses:
+        "200":
+          description: Activity list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ActivityItem"
+
+  /dashboard/ai-usage:
+    get:
+      operationId: getAiUsage
+      tags: [dashboard]
+      summary: Get AI usage analytics
+      responses:
+        "200":
+          description: AI usage data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiUsageStats"
+
+  /dashboard/revenue:
+    get:
+      operationId: getDashboardRevenue
+      tags: [dashboard]
+      summary: Get revenue analytics
+      responses:
+        "200":
+          description: Revenue data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RevenueStats"
+
+  # Projects
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      summary: List all projects
+      responses:
+        "200":
+          description: Projects list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Project"
+    post:
+      operationId: createProject
+      tags: [projects]
+      summary: Create a new project
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectInput"
+      responses:
+        "201":
+          description: Created project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+
+  /projects/{id}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      summary: Get project by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+    patch:
+      operationId: updateProject
+      tags: [projects]
+      summary: Update a project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectUpdate"
+      responses:
+        "200":
+          description: Updated project
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Project"
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      summary: Delete a project
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /projects/templates:
+    get:
+      operationId: listProjectTemplates
+      tags: [projects]
+      summary: List project templates
+      responses:
+        "200":
+          description: Templates list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ProjectTemplate"
+
+  # AI Builder
+  /ai/sessions:
+    get:
+      operationId: listAiSessions
+      tags: [ai]
+      summary: List AI chat sessions
+      responses:
+        "200":
+          description: Sessions list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AiSession"
+    post:
+      operationId: createAiSession
+      tags: [ai]
+      summary: Create a new AI session
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiSessionInput"
+      responses:
+        "201":
+          description: Created session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiSession"
+
+  /ai/sessions/{id}/messages:
+    get:
+      operationId: getAiMessages
+      tags: [ai]
+      summary: Get messages for a session
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Messages
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AiMessage"
+    post:
+      operationId: sendAiMessage
+      tags: [ai]
+      summary: Send a message to AI
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AiMessageInput"
+      responses:
+        "201":
+          description: AI response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AiMessage"
+
+  # Repository
+  /projects/{id}/files:
+    get:
+      operationId: listProjectFiles
+      tags: [repository]
+      summary: List files in project repository
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Files
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RepoFile"
+
+  /projects/{id}/commits:
+    get:
+      operationId: listCommits
+      tags: [repository]
+      summary: List commit history
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Commits
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Commit"
+
+  /projects/{id}/branches:
+    get:
+      operationId: listBranches
+      tags: [repository]
+      summary: List branches
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Branches
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Branch"
+
+  /projects/{id}/issues:
+    get:
+      operationId: listIssues
+      tags: [repository]
+      summary: List issues
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Issues
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Issue"
+    post:
+      operationId: createIssue
+      tags: [repository]
+      summary: Create an issue
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/IssueInput"
+      responses:
+        "201":
+          description: Created issue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Issue"
+
+  # Deployments
+  /deployments:
+    get:
+      operationId: listDeployments
+      tags: [deployments]
+      summary: List all deployments
+      responses:
+        "200":
+          description: Deployments
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Deployment"
+    post:
+      operationId: createDeployment
+      tags: [deployments]
+      summary: Trigger a new deployment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeploymentInput"
+      responses:
+        "201":
+          description: Created deployment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deployment"
+
+  /deployments/{id}:
+    get:
+      operationId: getDeployment
+      tags: [deployments]
+      summary: Get deployment by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Deployment
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Deployment"
+
+  /deployments/{id}/logs:
+    get:
+      operationId: getDeploymentLogs
+      tags: [deployments]
+      summary: Get deployment logs
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Logs
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/DeploymentLog"
+
+  # Marketplace
+  /marketplace/items:
+    get:
+      operationId: listMarketplaceItems
+      tags: [marketplace]
+      summary: List marketplace items
+      responses:
+        "200":
+          description: Marketplace items
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/MarketplaceItem"
+    post:
+      operationId: createMarketplaceItem
+      tags: [marketplace]
+      summary: List an item in the marketplace
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarketplaceItemInput"
+      responses:
+        "201":
+          description: Created item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceItem"
+
+  /marketplace/items/{id}:
+    get:
+      operationId: getMarketplaceItem
+      tags: [marketplace]
+      summary: Get marketplace item by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketplaceItem"
+
+  # User Profile
+  /users/me:
+    get:
+      operationId: getMyProfile
+      tags: [users]
+      summary: Get current user profile
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+
+  /users/{username}:
+    get:
+      operationId: getUserProfile
+      tags: [users]
+      summary: Get user profile by username
+      parameters:
+        - name: username
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: User profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+
+  /users/me/contributions:
+    get:
+      operationId: getContributions
+      tags: [users]
+      summary: Get contribution graph data
+      responses:
+        "200":
+          description: Contributions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ContributionDay"
+
+  # AI Trading Signal Bot
+  /trading/signals:
+    get:
+      operationId: listTradingSignals
+      tags: [trading]
+      summary: List trading signals
+      responses:
+        "200":
+          description: Signals
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TradingSignal"
+    post:
+      operationId: createTradingSignal
+      tags: [trading]
+      summary: Create a trading signal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TradingSignalInput"
+      responses:
+        "201":
+          description: Created signal
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TradingSignal"
+
+  /trading/stats:
+    get:
+      operationId: getTradingStats
+      tags: [trading]
+      summary: Get trading bot statistics
+      responses:
+        "200":
+          description: Stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TradingStats"
+
+  /trading/subscribers:
+    get:
+      operationId: listSubscribers
+      tags: [trading]
+      summary: List WhatsApp subscribers
+      responses:
+        "200":
+          description: Subscribers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Subscriber"
+
+  /trading/performance:
+    get:
+      operationId: getTradingPerformance
+      tags: [trading]
+      summary: Get performance chart data
+      responses:
+        "200":
+          description: Performance data
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PerformanceDataPoint"
+
 components:
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
         status:
           type: string
-      required:
-        - status
 
+    DashboardStats:
+      type: object
+      required: [totalProjects, activeDeployments, aiTokensUsed, totalRevenue, projectsThisMonth, deploymentsToday]
+      properties:
+        totalProjects:
+          type: integer
+        activeDeployments:
+          type: integer
+        aiTokensUsed:
+          type: integer
+        totalRevenue:
+          type: number
+        projectsThisMonth:
+          type: integer
+        deploymentsToday:
+          type: integer
+        revenueChange:
+          type: number
+        deploymentSuccessRate:
+          type: number
+
+    ActivityItem:
+      type: object
+      required: [id, type, description, createdAt]
+      properties:
+        id:
+          type: integer
+        type:
+          type: string
+        description:
+          type: string
+        projectName:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    AiUsageStats:
+      type: object
+      required: [totalTokens, tokensThisMonth, requestsToday, dailyUsage]
+      properties:
+        totalTokens:
+          type: integer
+        tokensThisMonth:
+          type: integer
+        requestsToday:
+          type: integer
+        dailyUsage:
+          type: array
+          items:
+            type: object
+            required: [date, tokens]
+            properties:
+              date:
+                type: string
+              tokens:
+                type: integer
+
+    RevenueStats:
+      type: object
+      required: [totalRevenue, monthlyRevenue, activeSubscriptions, monthlyData]
+      properties:
+        totalRevenue:
+          type: number
+        monthlyRevenue:
+          type: number
+        activeSubscriptions:
+          type: integer
+        monthlyData:
+          type: array
+          items:
+            type: object
+            required: [month, revenue]
+            properties:
+              month:
+                type: string
+              revenue:
+                type: number
+
+    Project:
+      type: object
+      required: [id, name, description, status, language, stars, forks, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: ["string", "null"]
+        status:
+          type: string
+        language:
+          type: ["string", "null"]
+        stars:
+          type: integer
+        forks:
+          type: integer
+        isPrivate:
+          type: boolean
+        deploymentUrl:
+          type: ["string", "null"]
+        githubUrl:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    ProjectInput:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        language:
+          type: string
+        isPrivate:
+          type: boolean
+        templateId:
+          type: ["integer", "null"]
+        githubUrl:
+          type: ["string", "null"]
+
+    ProjectUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+        isPrivate:
+          type: boolean
+
+    ProjectTemplate:
+      type: object
+      required: [id, name, description, language, category]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        description:
+          type: string
+        language:
+          type: string
+        category:
+          type: string
+        stars:
+          type: integer
+
+    AiSession:
+      type: object
+      required: [id, title, projectId, messageCount, createdAt, updatedAt]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        projectId:
+          type: ["integer", "null"]
+        messageCount:
+          type: integer
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    AiSessionInput:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        projectId:
+          type: ["integer", "null"]
+
+    AiMessage:
+      type: object
+      required: [id, sessionId, role, content, createdAt]
+      properties:
+        id:
+          type: integer
+        sessionId:
+          type: integer
+        role:
+          type: string
+        content:
+          type: string
+        createdAt:
+          type: string
+
+    AiMessageInput:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+
+    RepoFile:
+      type: object
+      required: [name, path, type, size]
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        type:
+          type: string
+        size:
+          type: integer
+        lastCommit:
+          type: ["string", "null"]
+        lastCommitDate:
+          type: ["string", "null"]
+
+    Commit:
+      type: object
+      required: [id, sha, message, author, date]
+      properties:
+        id:
+          type: integer
+        sha:
+          type: string
+        message:
+          type: string
+        author:
+          type: string
+        date:
+          type: string
+        additions:
+          type: integer
+        deletions:
+          type: integer
+
+    Branch:
+      type: object
+      required: [name, isDefault, lastCommit, updatedAt]
+      properties:
+        name:
+          type: string
+        isDefault:
+          type: boolean
+        lastCommit:
+          type: string
+        updatedAt:
+          type: string
+        aheadBy:
+          type: integer
+        behindBy:
+          type: integer
+
+    Issue:
+      type: object
+      required: [id, projectId, title, status, priority, createdAt]
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        title:
+          type: string
+        description:
+          type: ["string", "null"]
+        status:
+          type: string
+        priority:
+          type: string
+        labels:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+
+    IssueInput:
+      type: object
+      required: [title]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        priority:
+          type: string
+        labels:
+          type: array
+          items:
+            type: string
+
+    Deployment:
+      type: object
+      required: [id, projectId, projectName, status, environment, provider, createdAt]
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        projectName:
+          type: string
+        status:
+          type: string
+        environment:
+          type: string
+        provider:
+          type: string
+        url:
+          type: ["string", "null"]
+        duration:
+          type: ["integer", "null"]
+        createdAt:
+          type: string
+
+    DeploymentInput:
+      type: object
+      required: [projectId, environment, provider]
+      properties:
+        projectId:
+          type: integer
+        environment:
+          type: string
+        provider:
+          type: string
+        branch:
+          type: string
+
+    DeploymentLog:
+      type: object
+      required: [id, deploymentId, level, message, timestamp]
+      properties:
+        id:
+          type: integer
+        deploymentId:
+          type: integer
+        level:
+          type: string
+        message:
+          type: string
+        timestamp:
+          type: string
+
+    MarketplaceItem:
+      type: object
+      required: [id, title, description, category, price, author, downloads, rating, createdAt]
+      properties:
+        id:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        price:
+          type: number
+        author:
+          type: string
+        downloads:
+          type: integer
+        rating:
+          type: number
+        tags:
+          type: array
+          items:
+            type: string
+        previewUrl:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+
+    MarketplaceItemInput:
+      type: object
+      required: [title, description, category, price]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        category:
+          type: string
+        price:
+          type: number
+        tags:
+          type: array
+          items:
+            type: string
+
+    UserProfile:
+      type: object
+      required: [id, username, displayName, bio, totalProjects, totalStars, followers, following, joinedAt]
+      properties:
+        id:
+          type: integer
+        username:
+          type: string
+        displayName:
+          type: string
+        bio:
+          type: ["string", "null"]
+        avatarUrl:
+          type: ["string", "null"]
+        location:
+          type: ["string", "null"]
+        website:
+          type: ["string", "null"]
+        totalProjects:
+          type: integer
+        totalStars:
+          type: integer
+        followers:
+          type: integer
+        following:
+          type: integer
+        achievements:
+          type: array
+          items:
+            type: string
+        joinedAt:
+          type: string
+
+    ContributionDay:
+      type: object
+      required: [date, count, level]
+      properties:
+        date:
+          type: string
+        count:
+          type: integer
+        level:
+          type: integer
+
+    TradingSignal:
+      type: object
+      required: [id, pair, direction, entryPrice, targetPrice, stopLoss, status, confidence, createdAt]
+      properties:
+        id:
+          type: integer
+        pair:
+          type: string
+        direction:
+          type: string
+        entryPrice:
+          type: number
+        targetPrice:
+          type: number
+        stopLoss:
+          type: number
+        status:
+          type: string
+        confidence:
+          type: number
+        pnl:
+          type: ["number", "null"]
+        createdAt:
+          type: string
+
+    TradingSignalInput:
+      type: object
+      required: [pair, direction, entryPrice, targetPrice, stopLoss, confidence]
+      properties:
+        pair:
+          type: string
+        direction:
+          type: string
+        entryPrice:
+          type: number
+        targetPrice:
+          type: number
+        stopLoss:
+          type: number
+        confidence:
+          type: number
+
+    TradingStats:
+      type: object
+      required: [totalSignals, winRate, activeSubscribers, monthlyRevenue, avgProfit, totalPnl]
+      properties:
+        totalSignals:
+          type: integer
+        winRate:
+          type: number
+        activeSubscribers:
+          type: integer
+        monthlyRevenue:
+          type: number
+        avgProfit:
+          type: number
+        totalPnl:
+          type: number
+
+    Subscriber:
+      type: object
+      required: [id, phone, name, plan, status, joinedAt]
+      properties:
+        id:
+          type: integer
+        phone:
+          type: string
+        name:
+          type: string
+        plan:
+          type: string
+        status:
+          type: string
+        joinedAt:
+          type: string
+
+    PerformanceDataPoint:
+      type: object
+      required: [date, winRate, signals, pnl]
+      properties:
+        date:
+          type: string
+        winRate:
+          type: number
+        signals:
+          type: integer
+        pnl:
+          type: number

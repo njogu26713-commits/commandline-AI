@@ -1,0 +1,1 @@
+- [Orval Params collision fix](orval-params-collision.md) — removing `schemas` from zod orval config and only exporting `./generated/api` from api-zod barrel prevents TS2308 on Params types
