@@ -49,7 +49,7 @@ export default function Settings() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="bio">Bio</Label>
-                <Textarea id="bio" defaultValue="Full-stack developer building on CodeVault." />
+                <Textarea id="bio" defaultValue="Algorithmic trader using CommandLine AI." />
               </div>
             </CardContent>
             <CardFooter className="border-t px-6 py-4 flex justify-between items-center bg-muted/20">
@@ -141,7 +141,7 @@ export default function Settings() {
           <Card>
             <CardHeader>
               <CardTitle>Connected Accounts</CardTitle>
-              <CardDescription>Link third-party services to CodeVault.</CardDescription>
+              <CardDescription>Link third-party services to CommandLine AI.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between p-4 border rounded-lg">
@@ -184,7 +184,7 @@ export default function Settings() {
           <Card>
             <CardHeader>
               <CardTitle>AI Builder Settings</CardTitle>
-              <CardDescription>Configure how the CodeVault AI assists you.</CardDescription>
+              <CardDescription>Configure how the CommandLine AI trading assistant helps you.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">

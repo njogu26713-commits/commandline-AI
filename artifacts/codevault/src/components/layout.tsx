@@ -36,7 +36,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     <SidebarProvider>
       <Sidebar>
         <SidebarHeader className="h-14 border-b flex items-center px-4">
-          <span className="font-bold text-lg">CodeVault</span>
+          <span className="font-bold text-lg">CommandLine AI</span>
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>

@@ -119,7 +119,7 @@ export default function AiBuilder() {
             <div className="p-4 border-b flex items-center justify-between bg-card z-10">
               <div className="font-semibold flex items-center gap-2">
                 <Bot className="w-5 h-5 text-primary" />
-                CodeVault Assistant
+                CommandLine AI Assistant
               </div>
               <Button variant="outline" size="sm" className="gap-2">
                 <Code className="w-4 h-4" /> Current Context
@@ -188,7 +188,7 @@ export default function AiBuilder() {
                 <Input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask CodeVault AI to build, debug, or explain..."
+                  placeholder="Ask CommandLine AI to analyze markets, build strategies, or explain signals..."
                   className="pr-12 py-6 rounded-xl shadow-sm bg-background border-muted-foreground/20 focus-visible:ring-primary/50"
                   disabled={sendMessage.isPending}
                 />
@@ -202,7 +202,7 @@ export default function AiBuilder() {
                 </Button>
               </form>
               <div className="text-center mt-2 text-[10px] text-muted-foreground">
-                CodeVault AI can make mistakes. Verify code before deploying.
+                CommandLine AI can make mistakes. Always verify signals before trading.
               </div>
             </div>
           </>

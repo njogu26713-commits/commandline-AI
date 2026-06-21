@@ -38,7 +38,7 @@ export default function Profile() {
           <div className="flex-1">
             <h1 className="text-3xl font-bold tracking-tight">{profile.displayName}</h1>
             <p className="text-xl text-muted-foreground">@{profile.username}</p>
-            <p className="mt-2 text-foreground/80 max-w-2xl">{profile.bio || "Full-stack developer building on CodeVault."}</p>
+            <p className="mt-2 text-foreground/80 max-w-2xl">{profile.bio || "Algorithmic trader using CommandLine AI."}</p>
             
             <div className="flex flex-wrap gap-4 mt-4 text-sm text-muted-foreground">
               {profile.location && (
