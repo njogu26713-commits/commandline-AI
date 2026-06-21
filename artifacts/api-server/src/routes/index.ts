@@ -8,6 +8,7 @@ import deploymentsRouter from "./deployments";
 import marketplaceRouter from "./marketplace";
 import usersRouter from "./users";
 import tradingRouter from "./trading";
+import whatsappRouter from "./whatsapp";
 
 const router: IRouter = Router();
 
@@ -20,5 +21,6 @@ router.use(deploymentsRouter);
 router.use(marketplaceRouter);
 router.use(usersRouter);
 router.use(tradingRouter);
+router.use(whatsappRouter);
 
 export default router;
