@@ -25,6 +25,8 @@ const state: WAState = {
   connecting: false,
 };
 
+const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 export async function connectWhatsApp() {
   if (state.connecting || state.connected) return;
   state.connecting = true;
@@ -95,6 +97,30 @@ export async function sendWAMessage(phone: string, message: string) {
   await state.sock.sendMessage(jid, { text: message });
 }
 
+// ── Message formatters ────────────────────────────────────────────────────────
+
+export function formatPrepMessage(signal: {
+  pair: string;
+  direction: string;
+  category?: string;
+  confidence: number;
+}) {
+  const dirEmoji  = signal.direction === "BUY" ? "🟢" : "🔴";
+  const mktEmoji  = signal.category === "forex" ? "💱" : "₿";
+  const mktLabel  = signal.category === "forex" ? "FOREX" : "CRYPTO";
+  const lines = [
+    `⚡ *SIGNAL INCOMING* ⚡`,
+    ``,
+    `${dirEmoji} *${signal.pair}* — ${signal.direction}`,
+    `${mktEmoji} Market: ${mktLabel}`,
+    `🤖 AI Confidence: *${signal.confidence}%*`,
+    ``,
+    `📋 Prepare your chart and trading account.`,
+    `⏳ _Full signal with entry, TP & SL dropping now…_`,
+  ];
+  return lines.join("\n");
+}
+
 export function formatSignalMessage(signal: {
   pair: string;
   direction: string;
@@ -103,25 +129,44 @@ export function formatSignalMessage(signal: {
   stopLoss: number;
   confidence: number;
   reasoning?: string;
+  category?: string;
 }) {
-  const emoji = signal.direction === "BUY" ? "🟢" : "🔴";
-  const arrow = signal.direction === "BUY" ? "⬆️" : "⬇️";
-  const pnlPct = (
-    ((signal.targetPrice - signal.entryPrice) / signal.entryPrice) *
-    100
-  ).toFixed(2);
-  return (
-    `${emoji} *CommandLine AI Signal* ${arrow}\n\n` +
-    `📊 *${signal.pair}* — ${signal.direction}\n` +
-    `💰 Entry:    $${signal.entryPrice}\n` +
-    `🎯 Target:   $${signal.targetPrice}  (+${pnlPct}%)\n` +
-    `🛑 Stop Loss: $${signal.stopLoss}\n` +
-    `🤖 AI Confidence: *${signal.confidence}%*\n` +
-    (signal.reasoning ? `\n📝 ${signal.reasoning}\n` : "") +
-    `\n⚡ _Powered by CommandLine AI_\n` +
-    `Reply *STOP* to unsubscribe`
-  );
+  const dirEmoji = signal.direction === "BUY" ? "🟢" : "🔴";
+  const arrow    = signal.direction === "BUY" ? "⬆️" : "⬇️";
+  const mktEmoji = signal.category === "forex" ? "💱" : "₿";
+
+  // Risk/reward ratio
+  const risk   = Math.abs(signal.entryPrice - signal.stopLoss);
+  const reward = Math.abs(signal.targetPrice - signal.entryPrice);
+  const rr     = risk > 0 ? (reward / risk).toFixed(1) : "—";
+
+  // For forex show as-is; for crypto add $ prefix
+  const fmt = (n: number) =>
+    signal.category === "forex"
+      ? n.toFixed(n < 10 ? 5 : 2)
+      : `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 6 })}`;
+
+  const lines = [
+    `${dirEmoji} *CommandLine AI — ${signal.direction} Signal* ${arrow}`,
+    `━━━━━━━━━━━━━━━━━━━━━━━`,
+    `${mktEmoji} *${signal.pair}*`,
+    ``,
+    `💰 *Entry:*     ${fmt(signal.entryPrice)}`,
+    `🎯 *Take Profit:* ${fmt(signal.targetPrice)}`,
+    `🛑 *Stop Loss:*  ${fmt(signal.stopLoss)}`,
+    `📐 *Risk/Reward:* 1 : ${rr}`,
+    ``,
+    `🤖 *AI Confidence:* ${signal.confidence}%`,
+    ...(signal.reasoning ? [`\n📝 _${signal.reasoning}_`] : []),
+    ``,
+    `━━━━━━━━━━━━━━━━━━━━━━━`,
+    `⚡ _Powered by CommandLine AI_`,
+    `Reply *STOP* to unsubscribe`,
+  ];
+  return lines.join("\n");
 }
+
+// ── Broadcast with preparation signal ─────────────────────────────────────────
 
 export async function broadcastSignal(
   signal: {
@@ -132,6 +177,7 @@ export async function broadcastSignal(
     stopLoss: number;
     confidence: number;
     reasoning?: string;
+    category?: string;
   },
   subscribers: Array<{ phone: string; name: string; status: string }>
 ) {
@@ -139,17 +185,28 @@ export async function broadcastSignal(
     throw new Error("WhatsApp not connected");
   }
 
-  const message = formatSignalMessage(signal);
-  const active = subscribers.filter((s) => s.status === "active");
+  const prepMsg  = formatPrepMessage(signal);
+  const fullMsg  = formatSignalMessage(signal);
+  const active   = subscribers.filter((s) => s.status === "active");
   let sent = 0;
 
   for (const sub of active) {
     try {
-      await sendWAMessage(sub.phone, message);
+      // 1️⃣  Preparation signal
+      await sendWAMessage(sub.phone, prepMsg);
+
+      // 2️⃣  Short suspense delay (3 seconds)
+      await delay(3000);
+
+      // 3️⃣  Full signal
+      await sendWAMessage(sub.phone, fullMsg);
+
       sent++;
-      await new Promise((r) => setTimeout(r, 400));
+
+      // Polite gap between subscribers (avoid WA rate-limit)
+      await delay(800);
     } catch {
-      // continue even if one fails
+      // continue even if one subscriber fails
     }
   }
 
