@@ -1,11 +1,4 @@
 import { useState } from "react";
-import { 
-  useListDeployments, 
-  useCreateDeployment, 
-  useGetDeploymentLogs,
-  getListDeploymentsQueryKey,
-  getGetDeploymentLogsQueryKey
-} from "@workspace/api-client-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,114 +8,263 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Cloud, ExternalLink, Terminal, Plus, Clock, CheckCircle2, XCircle, Loader2 } from "lucide-react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Users, Plus, Trash2, ToggleLeft, ToggleRight, TrendingUp,
+  Bitcoin, DollarSign, CheckCircle2, XCircle, Loader2,
+} from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PageTransition } from "@/components/page-transition";
+import { useQuery, useMutation } from "@tanstack/react-query";
 
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface Subscriber {
+  id: number;
+  phone: string;
+  name: string;
+  plan: string;
+  status: string;
+  signalType: string;
+  joinedAt: string;
+}
+
+// ── API helpers ───────────────────────────────────────────────────────────────
+const SUBS_KEY = ["subscribers"];
+
+function useSubscribers() {
+  return useQuery<Subscriber[]>({
+    queryKey: SUBS_KEY,
+    queryFn: async () => {
+      const r = await fetch("/api/trading/subscribers");
+      if (!r.ok) throw new Error("Failed to load");
+      return r.json();
+    },
+  });
+}
+
+function useAddSubscriber() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: { name: string; phone: string; plan: string; signalType: string }) => {
+      const r = await fetch("/api/trading/subscribers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: SUBS_KEY }),
+  });
+}
+
+function useUpdateSubscriber() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...data }: { id: number; status?: string; signalType?: string; plan?: string }) => {
+      const r = await fetch(`/api/trading/subscribers/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      return r.json();
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: SUBS_KEY }),
+  });
+}
+
+function useDeleteSubscriber() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: number) => {
+      const r = await fetch(`/api/trading/subscribers/${id}`, { method: "DELETE" });
+      if (!r.ok) throw new Error(await r.text());
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: SUBS_KEY }),
+  });
+}
+
+// ── Signal type badge ─────────────────────────────────────────────────────────
+function SignalTypeBadge({ type }: { type: string }) {
+  if (type === "crypto")
+    return <Badge className="bg-orange-500/10 text-orange-500 border-orange-500/30 gap-1"><Bitcoin className="w-3 h-3" />Crypto</Badge>;
+  if (type === "forex")
+    return <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/30 gap-1"><DollarSign className="w-3 h-3" />Forex</Badge>;
+  return <Badge className="bg-indigo-500/10 text-indigo-500 border-indigo-500/30 gap-1"><TrendingUp className="w-3 h-3" />Both</Badge>;
+}
+
+function PlanBadge({ plan }: { plan: string }) {
+  const map: Record<string, string> = {
+    basic:   "bg-muted text-muted-foreground",
+    premium: "bg-yellow-500/10 text-yellow-500 border-yellow-500/30",
+    vip:     "bg-purple-500/10 text-purple-500 border-purple-500/30",
+  };
+  return <Badge className={`capitalize ${map[plan] ?? map.basic}`}>{plan}</Badge>;
+}
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 export default function Deployments() {
-  const { data: deployments, isLoading } = useListDeployments();
-  const createDeployment = useCreateDeployment();
-  const queryClient = useQueryClient();
+  const { data: subscribers, isLoading } = useSubscribers();
+  const addSub    = useAddSubscriber();
+  const updateSub = useUpdateSubscriber();
+  const deleteSub = useDeleteSubscriber();
   const { toast } = useToast();
 
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [newDep, setNewDep] = useState({ projectId: "", environment: "production", provider: "vercel" });
-  
-  const [selectedLogsId, setSelectedLogsId] = useState<number | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [form, setForm] = useState({ name: "", phone: "", plan: "basic", signalType: "both" });
 
-  const { data: logs, isLoading: logsLoading } = useGetDeploymentLogs(selectedLogsId || 0, {
-    query: { enabled: !!selectedLogsId, queryKey: getGetDeploymentLogsQueryKey(selectedLogsId || 0) }
-  });
-
-  const handleDeploy = () => {
-    if (!newDep.projectId) return;
-    createDeployment.mutate({ data: { 
-      projectId: parseInt(newDep.projectId, 10), 
-      environment: newDep.environment, 
-      provider: newDep.provider 
-    }}, {
-      onSuccess: () => {
-        setIsCreateOpen(false);
-        queryClient.invalidateQueries({ queryKey: getListDeploymentsQueryKey() });
-        toast({ title: "Bot deployed successfully" });
-      }
-    });
-  };
-
-  const getStatusIcon = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'success': return <CheckCircle2 className="w-4 h-4 text-green-500" />;
-      case 'failed': return <XCircle className="w-4 h-4 text-destructive" />;
-      case 'building':
-      case 'pending': return <Loader2 className="w-4 h-4 text-primary animate-spin" />;
-      default: return <Clock className="w-4 h-4 text-muted-foreground" />;
+  const handleAdd = async () => {
+    if (!form.name || !form.phone) return;
+    try {
+      await addSub.mutateAsync(form);
+      setIsOpen(false);
+      setForm({ name: "", phone: "", plan: "basic", signalType: "both" });
+      toast({ title: "✅ Subscriber added", description: `${form.name} will receive ${form.signalType === "both" ? "Crypto + Forex" : form.signalType} signals.` });
+    } catch (err: any) {
+      toast({ title: "Failed to add subscriber", description: err.message, variant: "destructive" });
     }
   };
 
+  const handleToggleStatus = async (sub: Subscriber) => {
+    const next = sub.status === "active" ? "inactive" : "active";
+    await updateSub.mutateAsync({ id: sub.id, status: next });
+    toast({ title: next === "active" ? "✅ Subscriber activated" : "⏸ Subscriber paused", description: sub.name });
+  };
+
+  const handleDelete = async (sub: Subscriber) => {
+    await deleteSub.mutateAsync(sub.id);
+    toast({ title: "🗑 Subscriber removed", description: sub.name });
+  };
+
+  const active   = subscribers?.filter(s => s.status === "active") ?? [];
+  const crypto   = active.filter(s => s.signalType === "crypto" || s.signalType === "both");
+  const forex    = active.filter(s => s.signalType === "forex"  || s.signalType === "both");
+
   return (
     <PageTransition className="space-y-6 max-w-7xl mx-auto">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Bot Deployments</h1>
-          <p className="text-muted-foreground">Monitor and manage your live trading bots.</p>
+          <p className="text-muted-foreground">Manage subscribers — each user picks their signal path (Crypto, Forex, or Both).</p>
         </div>
-
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <Dialog open={isOpen} onOpenChange={setIsOpen}>
           <DialogTrigger asChild>
-            <Button className="gap-2"><Plus className="w-4 h-4" /> Deploy Bot</Button>
+            <Button className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white">
+              <Plus className="w-4 h-4" /> Add Subscriber
+            </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="max-w-md">
             <DialogHeader>
-              <DialogTitle>Deploy Trading Bot</DialogTitle>
+              <DialogTitle>Add New Subscriber</DialogTitle>
             </DialogHeader>
-            <div className="space-y-4 py-4">
+            <div className="grid gap-4 py-4">
               <div className="space-y-2">
-                <Label>Strategy ID</Label>
-                <Input value={newDep.projectId} onChange={e => setNewDep({...newDep, projectId: e.target.value})} placeholder="e.g. 1" type="number" />
+                <Label>Full Name</Label>
+                <Input
+                  placeholder="e.g. John Doe"
+                  value={form.name}
+                  onChange={e => setForm({ ...form, name: e.target.value })}
+                />
               </div>
               <div className="space-y-2">
-                <Label>Environment</Label>
-                <Select value={newDep.environment} onValueChange={v => setNewDep({...newDep, environment: v})}>
+                <Label>WhatsApp Number</Label>
+                <Input
+                  placeholder="+1234567890 (with country code)"
+                  value={form.phone}
+                  onChange={e => setForm({ ...form, phone: e.target.value })}
+                />
+                <p className="text-xs text-muted-foreground">Include country code without spaces, e.g. +447911123456</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Signal Path</Label>
+                <Select value={form.signalType} onValueChange={v => setForm({ ...form, signalType: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="production">Production</SelectItem>
-                    <SelectItem value="staging">Staging</SelectItem>
-                    <SelectItem value="preview">Preview</SelectItem>
+                    <SelectItem value="both">
+                      <span className="flex items-center gap-2"><TrendingUp className="w-4 h-4 text-indigo-500" /> Both (Crypto + Forex)</span>
+                    </SelectItem>
+                    <SelectItem value="crypto">
+                      <span className="flex items-center gap-2"><Bitcoin className="w-4 h-4 text-orange-500" /> Crypto Only</span>
+                    </SelectItem>
+                    <SelectItem value="forex">
+                      <span className="flex items-center gap-2"><DollarSign className="w-4 h-4 text-blue-500" /> Forex Only</span>
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Provider</Label>
-                <Select value={newDep.provider} onValueChange={v => setNewDep({...newDep, provider: v})}>
+                <Label>Plan</Label>
+                <Select value={form.plan} onValueChange={v => setForm({ ...form, plan: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="vercel">AWS</SelectItem>
-                    <SelectItem value="railway">Railway</SelectItem>
-                    <SelectItem value="netlify">DigitalOcean</SelectItem>
+                    <SelectItem value="basic">Basic</SelectItem>
+                    <SelectItem value="premium">Premium</SelectItem>
+                    <SelectItem value="vip">VIP</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
-              <Button onClick={handleDeploy} disabled={createDeployment.isPending || !newDep.projectId}>
-                Deploy Bot
+              <Button variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
+              <Button
+                onClick={handleAdd}
+                disabled={addSub.isPending || !form.name || !form.phone}
+                className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white"
+              >
+                {addSub.isPending ? <><Loader2 className="w-4 h-4 animate-spin" /> Adding…</> : "Add Subscriber"}
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
 
+      {/* Stats */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Subscribers</CardTitle>
+            <Users className="w-4 h-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{active.length}</div>
+            <p className="text-xs text-muted-foreground">Receiving WhatsApp signals</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Crypto Subscribers</CardTitle>
+            <Bitcoin className="w-4 h-4 text-orange-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-orange-500">{crypto.length}</div>
+            <p className="text-xs text-muted-foreground">Receive crypto signals</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Forex Subscribers</CardTitle>
+            <DollarSign className="w-4 h-4 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold text-blue-500">{forex.length}</div>
+            <p className="text-xs text-muted-foreground">Receive forex signals</p>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Subscriber Table */}
       <div className="border rounded-xl bg-card overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Strategy</TableHead>
-              <TableHead>Environment</TableHead>
+              <TableHead>Subscriber</TableHead>
+              <TableHead>WhatsApp</TableHead>
+              <TableHead>Signal Path</TableHead>
+              <TableHead>Plan</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Provider</TableHead>
-              <TableHead>Duration</TableHead>
-              <TableHead>Created At</TableHead>
+              <TableHead>Joined</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -130,84 +272,59 @@ export default function Deployments() {
             {isLoading ? (
               Array(5).fill(0).map((_, i) => (
                 <TableRow key={i}>
-                  <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-16" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-20" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-20" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-12" /></TableCell>
-                  <TableCell><Skeleton className="h-5 w-24" /></TableCell>
-                  <TableCell><Skeleton className="h-8 w-20 ml-auto" /></TableCell>
+                  {Array(7).fill(0).map((_, j) => (
+                    <TableCell key={j}><Skeleton className="h-5 w-full" /></TableCell>
+                  ))}
                 </TableRow>
               ))
-            ) : deployments?.length === 0 ? (
+            ) : !subscribers?.length ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                  No bots deployed yet.
+                <TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
+                  <div className="flex flex-col items-center gap-2">
+                    <Users className="w-8 h-8 opacity-30" />
+                    <p>No subscribers yet. Add your first subscriber above.</p>
+                  </div>
                 </TableCell>
               </TableRow>
             ) : (
-              deployments?.map((dep) => (
-                <TableRow key={dep.id}>
-                  <TableCell className="font-medium">{dep.projectName}</TableCell>
+              subscribers.map((sub) => (
+                <TableRow key={sub.id} className={sub.status !== "active" ? "opacity-50" : ""}>
+                  <TableCell className="font-medium">{sub.name}</TableCell>
+                  <TableCell className="font-mono text-sm text-muted-foreground">{sub.phone}</TableCell>
+                  <TableCell><SignalTypeBadge type={sub.signalType} /></TableCell>
+                  <TableCell><PlanBadge plan={sub.plan} /></TableCell>
                   <TableCell>
-                    <Badge variant="outline" className="capitalize">{dep.environment}</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2 capitalize text-sm">
-                      {getStatusIcon(dep.status)} {dep.status}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2 text-sm capitalize">
-                      <Cloud className="w-4 h-4 text-muted-foreground" />
-                      {dep.provider}
-                    </div>
+                    {sub.status === "active"
+                      ? <span className="flex items-center gap-1 text-green-500 text-sm"><CheckCircle2 className="w-4 h-4" /> Active</span>
+                      : <span className="flex items-center gap-1 text-muted-foreground text-sm"><XCircle className="w-4 h-4" /> Paused</span>
+                    }
                   </TableCell>
                   <TableCell className="text-muted-foreground text-sm">
-                    {dep.duration ? `${dep.duration}s` : '-'}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">
-                    {new Date(dep.createdAt).toLocaleString()}
+                    {new Date(sub.joinedAt).toLocaleDateString()}
                   </TableCell>
                   <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      <Dialog open={selectedLogsId === dep.id} onOpenChange={(open) => !open && setSelectedLogsId(null)}>
-                        <DialogTrigger asChild>
-                          <Button variant="ghost" size="sm" onClick={() => setSelectedLogsId(dep.id)}>
-                            <Terminal className="w-4 h-4" />
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent className="max-w-3xl">
-                          <DialogHeader>
-                            <DialogTitle>Bot Logs: {dep.projectName}</DialogTitle>
-                          </DialogHeader>
-                          <div className="bg-black text-gray-300 p-4 rounded-md h-[400px] overflow-y-auto font-mono text-xs">
-                            {logsLoading ? (
-                              <div className="flex items-center justify-center h-full">
-                                <Loader2 className="w-6 h-6 animate-spin text-white" />
-                              </div>
-                            ) : logs?.length ? (
-                              logs.map((log) => (
-                                <div key={log.id} className={`mb-1 ${log.level === 'error' ? 'text-red-400' : log.level === 'warn' ? 'text-yellow-400' : ''}`}>
-                                  <span className="text-gray-500 mr-2">[{new Date(log.timestamp).toLocaleTimeString()}]</span>
-                                  {log.message}
-                                </div>
-                              ))
-                            ) : (
-                              <div className="text-gray-500">No logs available for this bot.</div>
-                            )}
-                          </div>
-                        </DialogContent>
-                      </Dialog>
-                      
-                      <Button variant="ghost" size="sm" asChild disabled={!dep.url}>
-                        {dep.url ? (
-                          <a href={dep.url} target="_blank" rel="noopener noreferrer">
-                            <ExternalLink className="w-4 h-4" />
-                          </a>
-                        ) : (
-                          <span><ExternalLink className="w-4 h-4 opacity-50" /></span>
-                        )}
+                    <div className="flex justify-end gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title={sub.status === "active" ? "Pause subscriber" : "Activate subscriber"}
+                        onClick={() => handleToggleStatus(sub)}
+                        disabled={updateSub.isPending}
+                      >
+                        {sub.status === "active"
+                          ? <ToggleRight className="w-4 h-4 text-green-500" />
+                          : <ToggleLeft className="w-4 h-4 text-muted-foreground" />
+                        }
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        title="Remove subscriber"
+                        onClick={() => handleDelete(sub)}
+                        disabled={deleteSub.isPending}
+                        className="text-destructive hover:text-destructive"
+                      >
+                        <Trash2 className="w-4 h-4" />
                       </Button>
                     </div>
                   </TableCell>
@@ -216,6 +333,15 @@ export default function Deployments() {
             )}
           </TableBody>
         </Table>
+      </div>
+
+      {/* Info box */}
+      <div className="rounded-xl border bg-muted/30 p-4 text-sm text-muted-foreground space-y-1">
+        <p className="font-semibold text-foreground">How signal paths work</p>
+        <p>• <strong>Crypto</strong> — receives signals for BTC, ETH, SOL, BNB, XRP, DOGE, etc.</p>
+        <p>• <strong>Forex</strong> — receives signals for EUR/USD, GBP/USD, XAU/USD, USD/JPY, etc.</p>
+        <p>• <strong>Both</strong> — receives all signals regardless of market type.</p>
+        <p className="pt-1">When you broadcast a signal from the Trading page, only subscribers who opted into that market will receive it.</p>
       </div>
     </PageTransition>
   );

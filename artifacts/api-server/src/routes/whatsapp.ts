@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
 import { subscribersTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import {
   connectWhatsApp,
   disconnectWA,
@@ -34,9 +35,20 @@ router.post("/whatsapp/broadcast", async (req, res) => {
     const { signal } = req.body;
     if (!signal) return res.status(400).json({ error: "signal is required" });
 
-    const subscribers = await db.select().from(subscribersTable);
-    const result = await broadcastSignal(signal, subscribers as any);
-    res.json(result);
+    // Filter subscribers by their signal path preference
+    const category: string = signal.category ?? "crypto";
+    const allSubscribers = await db
+      .select()
+      .from(subscribersTable)
+      .where(eq(subscribersTable.status, "active"));
+
+    const targetSubscribers = allSubscribers.filter((s) => {
+      const t = s.signalType ?? "both";
+      return t === "both" || t === category;
+    });
+
+    const result = await broadcastSignal(signal, targetSubscribers as any);
+    res.json({ ...result, category, filtered: targetSubscribers.length, total: allSubscribers.length });
   } catch (err: any) {
     req.log.error(err);
     res.status(500).json({ error: err.message ?? "Broadcast failed" });

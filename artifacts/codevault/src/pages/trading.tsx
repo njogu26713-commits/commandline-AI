@@ -26,17 +26,27 @@ import {
   TrendingUp, TrendingDown, Users, Activity, Plus, DollarSign,
   Bot, Zap, ShieldAlert, ScanLine, Play, Pause, RefreshCw, Brain,
   MessageCircle, Wifi, WifiOff, CheckCircle2, Clock, Sparkles, Loader2,
+  Bitcoin,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PageTransition } from "@/components/page-transition";
 
-const MARKET_PAIRS = [
+const CRYPTO_PAIRS = [
   { pair: "BTC/USDT",  price: "$67,420", change: "+2.4%", sentiment: "BULLISH", strength: 82 },
   { pair: "ETH/USDT",  price: "$3,510",  change: "+1.8%", sentiment: "BULLISH", strength: 74 },
   { pair: "SOL/USDT",  price: "$172",    change: "-0.9%", sentiment: "NEUTRAL", strength: 51 },
   { pair: "BNB/USDT",  price: "$598",    change: "+0.5%", sentiment: "BULLISH", strength: 63 },
   { pair: "XRP/USDT",  price: "$0.62",   change: "-1.2%", sentiment: "BEARISH", strength: 38 },
   { pair: "DOGE/USDT", price: "$0.18",   change: "-2.1%", sentiment: "BEARISH", strength: 29 },
+];
+
+const FOREX_PAIRS = [
+  { pair: "EUR/USD", price: "1.0852", change: "+0.12%", sentiment: "BULLISH", strength: 71 },
+  { pair: "GBP/USD", price: "1.2704", change: "-0.08%", sentiment: "NEUTRAL", strength: 55 },
+  { pair: "USD/JPY", price: "149.54", change: "+0.31%", sentiment: "BULLISH", strength: 78 },
+  { pair: "XAU/USD", price: "2,324",  change: "+0.55%", sentiment: "BULLISH", strength: 84 },
+  { pair: "AUD/USD", price: "0.6558", change: "-0.19%", sentiment: "BEARISH", strength: 42 },
+  { pair: "EUR/GBP", price: "0.8558", change: "+0.04%", sentiment: "NEUTRAL", strength: 50 },
 ];
 
 const AI_MODES = [
@@ -85,8 +95,9 @@ export default function Trading() {
   // Signal form
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [newSignal, setNewSignal] = useState({
-    pair: "", direction: "BUY", entryPrice: "", targetPrice: "", stopLoss: "", confidence: "80",
+    pair: "", direction: "BUY", entryPrice: "", targetPrice: "", stopLoss: "", confidence: "80", category: "crypto",
   });
+  const [scanCategory, setScanCategory] = useState<"crypto" | "forex">("crypto");
   const [aiReasoning, setAiReasoning] = useState("");
   const [generatingAI, setGeneratingAI] = useState(false);
   const [broadcasting, setBroadcasting] = useState(false);
@@ -163,18 +174,19 @@ export default function Trading() {
       const res = await fetch("/api/trading/signals/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pair, mode: aiMode }),
+        body: JSON.stringify({ pair, mode: aiMode, category: newSignal.category }),
       });
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      setNewSignal({
+      setNewSignal(prev => ({
+        ...prev,
         pair: data.pair,
         direction: data.direction,
         entryPrice: String(data.entryPrice),
         targetPrice: String(data.targetPrice),
         stopLoss: String(data.stopLoss),
         confidence: String(data.confidence),
-      });
+      }));
       setAiReasoning(data.reasoning ?? "");
       toast({ title: "✨ AI Signal Generated", description: `${data.pair} ${data.direction} — ${data.confidence}% confidence` });
     } catch (err: any) {
@@ -199,6 +211,7 @@ export default function Trading() {
             targetPrice: parseFloat(newSignal.targetPrice),
             stopLoss:    parseFloat(newSignal.stopLoss),
             confidence:  parseInt(newSignal.confidence, 10),
+            category:    newSignal.category,
           },
         }, {
           onSuccess: () => resolve(),
@@ -222,6 +235,7 @@ export default function Trading() {
               stopLoss:    parseFloat(newSignal.stopLoss),
               confidence:  parseInt(newSignal.confidence, 10),
               reasoning:   aiReasoning,
+              category:    newSignal.category,
             },
           }),
         });
@@ -235,7 +249,7 @@ export default function Trading() {
       }
 
       setIsCreateOpen(false);
-      setNewSignal({ pair: "", direction: "BUY", entryPrice: "", targetPrice: "", stopLoss: "", confidence: "80" });
+      setNewSignal({ pair: "", direction: "BUY", entryPrice: "", targetPrice: "", stopLoss: "", confidence: "80", category: "crypto" });
       setAiReasoning("");
     } catch (err: any) {
       toast({ title: "Broadcast failed", description: err.message, variant: "destructive" });
@@ -327,12 +341,29 @@ export default function Trading() {
               <DialogTitle>Broadcast Signal via WhatsApp</DialogTitle>
             </DialogHeader>
             <div className="grid gap-4 py-4">
+              {/* Market category */}
+              <div className="space-y-2">
+                <Label>Market</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {(["crypto", "forex"] as const).map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => setNewSignal(s => ({ ...s, category: cat, pair: "" }))}
+                      className={`flex items-center justify-center gap-2 p-2 rounded-lg border text-sm font-medium transition-all capitalize ${newSignal.category === cat ? "border-indigo-500 bg-indigo-500/10 text-indigo-500" : "border-border hover:border-muted-foreground/50"}`}
+                    >
+                      {cat === "crypto" ? <Bitcoin className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />}
+                      {cat === "crypto" ? "Crypto" : "Forex"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* AI Generate button */}
               <div className="flex items-center gap-3">
                 <div className="flex-1 space-y-2">
                   <Label>Asset Pair</Label>
                   <Input
-                    placeholder="BTC/USDT"
+                    placeholder={newSignal.category === "forex" ? "EUR/USD" : "BTC/USDT"}
                     value={newSignal.pair}
                     onChange={e => setNewSignal({ ...newSignal, pair: e.target.value.toUpperCase() })}
                   />
@@ -596,11 +627,24 @@ export default function Trading() {
                 {isScanning ? <><RefreshCw className="w-4 h-4 animate-spin" /> Scanning…</> : <><RefreshCw className="w-4 h-4" /> Scan Now</>}
               </Button>
             </div>
-            <CardDescription>{lastScan ? `Last scan: ${lastScan}` : "AI monitoring 6 pairs for WhatsApp alert opportunities"}</CardDescription>
+            <CardDescription>{lastScan ? `Last scan: ${lastScan}` : "AI monitoring 12 pairs across Crypto & Forex"}</CardDescription>
+            {/* Category tabs */}
+            <div className="flex gap-2 mt-2">
+              {(["crypto", "forex"] as const).map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setScanCategory(cat)}
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-all ${scanCategory === cat ? "bg-indigo-500/10 border-indigo-500 text-indigo-500" : "border-border text-muted-foreground hover:border-muted-foreground/50"}`}
+                >
+                  {cat === "crypto" ? <Bitcoin className="w-3 h-3" /> : <DollarSign className="w-3 h-3" />}
+                  {cat === "crypto" ? "Crypto" : "Forex"}
+                </button>
+              ))}
+            </div>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {MARKET_PAIRS.map(item => (
+              {(scanCategory === "crypto" ? CRYPTO_PAIRS : FOREX_PAIRS).map(item => (
                 <div key={item.pair} className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/40 transition-colors">
                   <div className="flex items-center gap-3">
                     <Brain className="w-4 h-4 text-muted-foreground" />

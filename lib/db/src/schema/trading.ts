@@ -12,6 +12,7 @@ export const tradingSignalsTable = pgTable("trading_signals", {
   status: text("status").notNull().default("active"),
   confidence: real("confidence").notNull(),
   pnl: real("pnl"),
+  category: text("category").notNull().default("crypto"), // "crypto" | "forex"
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -25,6 +26,7 @@ export const subscribersTable = pgTable("subscribers", {
   name: text("name").notNull(),
   plan: text("plan").notNull().default("basic"),
   status: text("status").notNull().default("active"),
+  signalType: text("signal_type").notNull().default("both"), // "crypto" | "forex" | "both"
   joinedAt: timestamp("joined_at").notNull().defaultNow(),
 });
 
