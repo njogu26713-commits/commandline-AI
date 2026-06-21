@@ -7,11 +7,8 @@ import NotFound from "@/pages/not-found";
 
 import Layout from "@/components/layout";
 import Dashboard from "@/pages/dashboard";
-import Projects from "@/pages/projects";
-import ProjectDetail from "@/pages/project-detail";
 import AiBuilder from "@/pages/ai-builder";
 import Deployments from "@/pages/deployments";
-import Marketplace from "@/pages/marketplace";
 import Trading from "@/pages/trading";
 import Profile from "@/pages/profile";
 import Settings from "@/pages/settings";
@@ -28,13 +25,10 @@ const queryClient = new QueryClient({
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Dashboard} />
-      <Route path="/projects" component={Projects} />
-      <Route path="/projects/:id" component={ProjectDetail} />
-      <Route path="/ai-builder" component={AiBuilder} />
+      <Route path="/" component={Trading} />
+      <Route path="/dashboard" component={Dashboard} />
+      <Route path="/ai-analyst" component={AiBuilder} />
       <Route path="/deployments" component={Deployments} />
-      <Route path="/marketplace" component={Marketplace} />
-      <Route path="/trading" component={Trading} />
       <Route path="/profile" component={Profile} />
       <Route path="/settings" component={Settings} />
       <Route component={NotFound} />

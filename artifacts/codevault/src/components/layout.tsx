@@ -15,19 +15,17 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
-import { Moon, Sun, Home, Folder, Bot, Cloud, ShoppingCart, TrendingUp, User, Settings } from "lucide-react";
+import { Moon, Sun, Home, Bot, Cloud, TrendingUp, User, Settings, LayoutDashboard } from "lucide-react";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { theme, setTheme } = useTheme();
 
   const navItems = [
-    { href: "/", label: "Dashboard", icon: Home },
-    { href: "/projects", label: "Strategies", icon: Folder },
-    { href: "/ai-builder", label: "AI Analyst", icon: Bot },
+    { href: "/", label: "Trading Signals", icon: TrendingUp },
+    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { href: "/ai-analyst", label: "AI Analyst", icon: Bot },
     { href: "/deployments", label: "Bot Deployments", icon: Cloud },
-    { href: "/marketplace", label: "Marketplace", icon: ShoppingCart },
-    { href: "/trading", label: "Trading Signals", icon: TrendingUp },
     { href: "/profile", label: "Profile", icon: User },
     { href: "/settings", label: "Settings", icon: Settings },
   ];
