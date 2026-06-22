@@ -30,6 +30,32 @@ router.post("/whatsapp/disconnect", (_req, res) => {
   res.json({ message: "Disconnected" });
 });
 
+router.post("/whatsapp/test", async (req, res) => {
+  try {
+    const status = getWAStatus();
+    if (!status.connected || !status.phone) {
+      return res.status(400).json({ error: "WhatsApp not connected" });
+    }
+    const { sendWAMessage } = await import("../services/whatsapp.js");
+    const testMsg = [
+      `🧪 *Test Message — CommandLine AI*`,
+      ``,
+      `✅ Your WhatsApp bot connection is working perfectly!`,
+      ``,
+      `📊 When you broadcast a signal from the dashboard, your subscribers will receive:`,
+      `  1️⃣  A preparation alert (incoming signal warning)`,
+      `  2️⃣  The full signal with Entry, TP & Stop Loss`,
+      ``,
+      `🤖 _CommandLine AI is ready to send live trading signals._`,
+    ].join("\n");
+    await sendWAMessage(status.phone, testMsg);
+    res.json({ success: true, sentTo: status.phone });
+  } catch (err: any) {
+    req.log.error(err);
+    res.status(500).json({ error: err.message ?? "Test message failed" });
+  }
+});
+
 router.post("/whatsapp/broadcast", async (req, res) => {
   try {
     const { signal } = req.body;

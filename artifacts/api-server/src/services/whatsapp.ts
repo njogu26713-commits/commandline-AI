@@ -70,6 +70,26 @@ export async function connectWhatsApp() {
         state.qr = null;
         state.connecting = false;
         state.phone = (sock.user?.id ?? "").split(":")[0] || null;
+
+        // Send confirmation message to the connected number
+        if (state.phone) {
+          await delay(2000);
+          const confirmMsg = [
+            `✅ *CommandLine AI Bot Connected!*`,
+            ``,
+            `🤖 Your WhatsApp bot is now live and ready.`,
+            `📲 You will receive trading signals on this number.`,
+            ``,
+            `*Bot status:* Active`,
+            `*Platform:* CommandLine AI`,
+            ``,
+            `_Reply STOP at any time to disconnect._`,
+          ].join("\n");
+          try {
+            const jid = state.phone + "@s.whatsapp.net";
+            await sock.sendMessage(jid, { text: confirmMsg });
+          } catch {}
+        }
       }
     });
 

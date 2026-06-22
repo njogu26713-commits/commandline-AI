@@ -101,6 +101,7 @@ export default function Trading() {
   const [aiReasoning, setAiReasoning] = useState("");
   const [generatingAI, setGeneratingAI] = useState(false);
   const [broadcasting, setBroadcasting] = useState(false);
+  const [testingWA, setTestingWA] = useState(false);
 
   // WhatsApp state (real — from API)
   const [waStatus, setWaStatus] = useState<WAStatus>({ connected: false, qr: null, phone: null, connecting: false });
@@ -162,6 +163,21 @@ export default function Trading() {
       startPolling();
     } catch {
       toast({ title: "Connection failed", variant: "destructive" });
+    }
+  };
+
+  // ── Send Test Message ─────────────────────────────────────────────────────
+  const handleSendTest = async () => {
+    setTestingWA(true);
+    try {
+      const res = await fetch("/api/whatsapp/test", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      toast({ title: "🧪 Test message sent!", description: `Check your WhatsApp — sent to +${data.sentTo}` });
+    } catch (err: any) {
+      toast({ title: "Test failed", description: err.message, variant: "destructive" });
+    } finally {
+      setTestingWA(false);
     }
   };
 
@@ -511,6 +527,18 @@ export default function Trading() {
               {waStatus.qr && !waStatus.connected && (
                 <Button variant="outline" size="sm" onClick={() => setShowQrDialog(true)} className="gap-2 text-yellow-600 border-yellow-500">
                   Show QR Code
+                </Button>
+              )}
+              {waStatus.connected && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 text-indigo-500 border-indigo-500 hover:bg-indigo-500/10"
+                  onClick={handleSendTest}
+                  disabled={testingWA}
+                >
+                  {testingWA ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                  {testingWA ? "Sending…" : "Send Test"}
                 </Button>
               )}
               <Button
