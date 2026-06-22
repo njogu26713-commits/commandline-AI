@@ -1,10 +1,14 @@
 import { Router } from "express";
-import { getBotState, startBot, stopBot } from "../services/bot.js";
+import { getBotState, getBotLogs, startBot, stopBot } from "../services/bot.js";
 
 const router = Router();
 
 router.get("/bot/status", (_req, res) => {
   res.json(getBotState());
+});
+
+router.get("/bot/logs", (_req, res) => {
+  res.json(getBotLogs());
 });
 
 router.post("/bot/start", (req, res) => {

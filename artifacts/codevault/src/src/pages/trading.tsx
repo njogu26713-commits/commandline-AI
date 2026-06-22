@@ -12,7 +12,7 @@ import {
   Zap, TrendingUp, TrendingDown, Users, DollarSign, Activity,
   MessageCircle, Wifi, WifiOff, Sparkles, Loader2, CheckCircle2,
   Bitcoin, RefreshCw, Bot, Play, Pause, FlaskConical,
-  ThumbsUp, ThumbsDown, BarChart2,
+  ThumbsUp, ThumbsDown, BarChart2, Clock, AlertCircle, XCircle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PageTransition } from "@/components/page-transition";
@@ -105,6 +105,14 @@ export default function Trading() {
     refetchInterval: 10000,
   });
   const botActive = botStatus?.active ?? false;
+
+  // Bot analysis logs
+  const { data: botLogs = [] } = useQuery<{ time: string; message: string; type: string }[]>({
+    queryKey: ["bot-logs-feed"],
+    queryFn: () => fetch("/api/bot/logs").then(r => r.json()),
+    refetchInterval: botActive ? 3000 : false,
+    enabled: botActive,
+  });
 
   // AI panel
   const [category, setCategory]     = useState<"crypto"|"forex">("crypto");
@@ -379,7 +387,7 @@ export default function Trading() {
                   <p className="text-xs text-muted-foreground">
                     {botActive
                       ? `${(botStatus?.mode ?? aiMode).charAt(0).toUpperCase() + (botStatus?.mode ?? aiMode).slice(1)} mode · scans all ${botStatus?.pairs?.length ?? 7} pairs · signals sent automatically`
-                      : "Start to scan all pairs automatically every 30 min"}
+                      : "Start to scan all pairs automatically every 5 min"}
                   </p>
                 </div>
               </div>
@@ -406,9 +414,9 @@ export default function Trading() {
                         await fetch("/api/bot/start", {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ mode: aiMode, intervalMinutes: 30 }),
+                          body: JSON.stringify({ mode: aiMode, intervalMinutes: 5 }),
                         });
-                        toast({ title: "🟢 Bot is live!", description: `Scanning all pairs in ${aiMode} mode. First scan running now…` });
+                        toast({ title: "🟢 Bot is live!", description: `Scanning all pairs in ${aiMode} mode every 5 minutes. First scan running now…` });
                       }
                       qc.invalidateQueries({ queryKey: ["signals"] });
                       refetchBot();
@@ -457,6 +465,46 @@ export default function Trading() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Live AI Analysis Feed — only when bot is active */}
+      {botActive && (
+        <Card className="border-indigo-500/30 bg-indigo-500/5">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Loader2 className="w-3.5 h-3.5 text-indigo-500 animate-spin" />
+              Live AI Analysis Feed
+              <span className="ml-auto text-[10px] font-normal text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full">
+                Every 5 min
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pt-0">
+            <div className="space-y-1 max-h-56 overflow-y-auto pr-1">
+              {botLogs.length === 0 ? (
+                <div className="flex items-center gap-2 text-xs text-indigo-400 py-2">
+                  <Loader2 className="w-3 h-3 animate-spin" /> Running first market scan across all pairs…
+                </div>
+              ) : botLogs.map((log, i) => (
+                <div key={i} className={`flex items-start gap-2 px-2 py-1.5 rounded text-xs ${
+                  log.type === "signal" ? "bg-green-500/10 border border-green-500/20" :
+                  log.type === "skip"   ? "bg-yellow-500/10 border border-yellow-500/20" :
+                  log.type === "error"  ? "bg-red-500/10 border border-red-500/20" :
+                  "bg-muted/40"
+                }`}>
+                  {log.type === "signal" ? <CheckCircle2 className="w-3 h-3 text-green-500 mt-0.5 flex-shrink-0" /> :
+                   log.type === "skip"   ? <AlertCircle  className="w-3 h-3 text-yellow-500 mt-0.5 flex-shrink-0" /> :
+                   log.type === "error"  ? <XCircle      className="w-3 h-3 text-red-500 mt-0.5 flex-shrink-0" /> :
+                   <Clock className="w-3 h-3 text-indigo-400/70 mt-0.5 flex-shrink-0" />}
+                  <span className="flex-1 font-mono leading-relaxed">{log.message}</span>
+                  <span className="text-muted-foreground/60 whitespace-nowrap text-[10px]">
+                    {new Date(log.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Active Signals */}
       {activeSignals.length > 0 && (
