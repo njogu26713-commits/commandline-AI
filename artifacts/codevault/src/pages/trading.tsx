@@ -45,10 +45,10 @@ const AI_MODES = [
 
 // ── API hooks ─────────────────────────────────────────────────────────────────
 function useStats() {
-  return useQuery<Stats>({ queryKey: ["stats"], queryFn: () => fetch("/api/trading/stats").then(r => r.json()), refetchInterval: 30000 });
+  return useQuery<Stats>({ queryKey: ["stats"], queryFn: () => fetch("/api/trading/stats").then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); }), refetchInterval: 30000 });
 }
 function useSignals() {
-  return useQuery<Signal[]>({ queryKey: ["signals"], queryFn: () => fetch("/api/trading/signals").then(r => r.json()), refetchInterval: 15000 });
+  return useQuery<Signal[]>({ queryKey: ["signals"], queryFn: () => fetch("/api/trading/signals").then(r => { if (!r.ok) throw new Error(r.statusText); return r.json(); }), refetchInterval: 15000 });
 }
 function useUpdateSignal() {
   const qc = useQueryClient();
