@@ -28,6 +28,8 @@ export const subscribersTable = pgTable("subscribers", {
   status: text("status").notNull().default("active"),
   signalType: text("signal_type").notNull().default("both"), // "crypto" | "forex" | "both"
   joinedAt: timestamp("joined_at").notNull().defaultNow(),
+  subscriptionEndsAt: timestamp("subscription_ends_at"),
+  botConnectedAt: timestamp("bot_connected_at"),
 });
 
 export type Subscriber = typeof subscribersTable.$inferSelect;
