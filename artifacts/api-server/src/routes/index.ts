@@ -10,6 +10,7 @@ import usersRouter from "./users";
 import tradingRouter from "./trading";
 import whatsappRouter from "./whatsapp";
 import mpesaRouter from "./mpesa";
+import botRouter from "./bot";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(usersRouter);
 router.use(tradingRouter);
 router.use(whatsappRouter);
 router.use(mpesaRouter);
+router.use(botRouter);
 
 export default router;

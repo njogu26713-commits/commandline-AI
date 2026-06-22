@@ -94,10 +94,19 @@ export default function Trading() {
   const [testingWA, setTestingWA] = useState(false);
   const pollRef = useRef<any>(null);
 
-  // Bot state
-  const [botActive, setBotActive] = useState(false);
-  const [aiMode, setAiMode]       = useState("balanced");
-  const [autoScan, setAutoScan]   = useState(false);
+  // Bot state — synced with server
+  const [aiMode, setAiMode] = useState("balanced");
+  const [botLoading, setBotLoading] = useState(false);
+  const { data: botStatus, refetch: refetchBot } = useQuery<{
+    active: boolean; mode: string; intervalMinutes: number;
+    lastSignalAt: string | null; lastScanAt: string | null;
+    signalsToday: number; nextScanAt: string | null; pairs: string[];
+  }>({
+    queryKey: ["bot-status"],
+    queryFn: () => fetch("/api/bot/status").then(r => r.json()),
+    refetchInterval: 10000,
+  });
+  const botActive = botStatus?.active ?? false;
 
   // Signal form
   const [isOpen, setIsOpen]         = useState(false);
@@ -431,8 +440,15 @@ export default function Trading() {
                     {botActive && <span className="flex items-center gap-1 text-xs text-indigo-500"><span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"/>LIVE</span>}
                   </div>
                   <p className="text-xs text-muted-foreground capitalize">
-                    {botActive ? `Running — ${aiMode} mode` : "Paused — awaiting manual signals"}
+                    {botActive
+                      ? `Running — ${botStatus?.mode ?? aiMode} mode · ${botStatus?.signalsToday ?? 0} signals today`
+                      : "Paused — awaiting manual signals"}
                   </p>
+                  {botActive && botStatus?.nextScanAt && (
+                    <p className="text-[10px] text-indigo-400 mt-0.5">
+                      Next scan: {new Date(botStatus.nextScanAt).toLocaleTimeString()}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -444,14 +460,30 @@ export default function Trading() {
                     </button>
                   ))}
                 </div>
-                <Button size="sm"
-                  onClick={() => {
-                    if (!waStatus.connected) { toast({ title: "Connect WhatsApp first", variant: "destructive" }); return; }
-                    setBotActive(v => !v);
-                    toast({ title: botActive ? "🔴 Bot paused" : "🟢 Bot activated" });
+                <Button size="sm" disabled={botLoading}
+                  onClick={async () => {
+                    if (!botActive && !waStatus.connected) { toast({ title: "Connect WhatsApp first", variant: "destructive" }); return; }
+                    setBotLoading(true);
+                    try {
+                      if (botActive) {
+                        await fetch("/api/bot/stop", { method: "POST" });
+                        toast({ title: "🔴 Bot paused", description: "Auto-scanning stopped" });
+                      } else {
+                        await fetch("/api/bot/start", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ mode: aiMode, intervalMinutes: 30 }),
+                        });
+                        toast({ title: "🟢 Bot activated!", description: `Scanning in ${aiMode} mode every 30 min` });
+                      }
+                      qc.invalidateQueries({ queryKey: ["signals"] });
+                      refetchBot();
+                    } catch (e: any) {
+                      toast({ title: "Error", description: e.message, variant: "destructive" });
+                    } finally { setBotLoading(false); }
                   }}
                   className={botActive ? "bg-red-500 hover:bg-red-600 text-white" : "bg-indigo-600 hover:bg-indigo-700 text-white"}>
-                  {botActive ? <><Pause className="w-3.5 h-3.5 mr-1"/>Pause</> : <><Play className="w-3.5 h-3.5 mr-1"/>Start</>}
+                  {botLoading ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin"/> : botActive ? <><Pause className="w-3.5 h-3.5 mr-1"/>Pause</> : <><Play className="w-3.5 h-3.5 mr-1"/>Start</>}
                 </Button>
               </div>
             </div>
