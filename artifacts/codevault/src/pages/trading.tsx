@@ -101,6 +101,7 @@ export default function Trading() {
     active: boolean; mode: string; intervalMinutes: number;
     lastSignalAt: string | null; lastScanAt: string | null;
     signalsToday: number; nextScanAt: string | null; pairs: string[];
+    currentAction: string | null; scannedPairs: number; lastSignalPair: string | null;
   }>({
     queryKey: ["bot-status"],
     queryFn: () => fetch("/api/bot/status").then(r => r.json()),
@@ -428,53 +429,53 @@ export default function Trading() {
         </Card>
 
         <Card className={`border-2 ${botActive ? "border-indigo-500/40 bg-indigo-500/5" : "border-border"}`}>
-          <CardContent className="pt-4">
-            <div className="flex items-center justify-between">
+          <CardContent className="pt-4 pb-4">
+            {/* Header row */}
+            <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-3">
                 <div className={`p-2.5 rounded-xl ${botActive ? "bg-indigo-500/10" : "bg-muted"}`}>
-                  <Bot className={`w-5 h-5 ${botActive ? "text-indigo-500" : "text-muted-foreground"}`} />
+                  <Bot className={`w-5 h-5 ${botActive ? "text-indigo-500 animate-pulse" : "text-muted-foreground"}`} />
                 </div>
                 <div>
                   <div className="font-semibold text-sm flex items-center gap-1.5">
-                    AI Bot
-                    {botActive && <span className="flex items-center gap-1 text-xs text-indigo-500"><span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"/>LIVE</span>}
-                  </div>
-                  <p className="text-xs text-muted-foreground capitalize">
+                    Autonomous AI Bot
                     {botActive
-                      ? `Running — ${botStatus?.mode ?? aiMode} mode · ${botStatus?.signalsToday ?? 0} signals today`
-                      : "Paused — awaiting manual signals"}
+                      ? <span className="flex items-center gap-1 text-xs text-indigo-500 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"/>LIVE</span>
+                      : <span className="text-xs font-normal text-muted-foreground">Offline</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {botActive
+                      ? `${(botStatus?.mode ?? aiMode).charAt(0).toUpperCase() + (botStatus?.mode ?? aiMode).slice(1)} mode · scans all ${botStatus?.pairs?.length ?? 7} pairs · signals sent automatically`
+                      : "Start to scan all pairs automatically every 30 min"}
                   </p>
-                  {botActive && botStatus?.nextScanAt && (
-                    <p className="text-[10px] text-indigo-400 mt-0.5">
-                      Next scan: {new Date(botStatus.nextScanAt).toLocaleTimeString()}
-                    </p>
-                  )}
                 </div>
               </div>
-              <div className="flex items-center gap-3">
-                <div className="flex gap-1">
-                  {AI_MODES.map(m => (
-                    <button key={m.value} onClick={() => setAiMode(m.value)}
-                      className={`text-[10px] px-1.5 py-0.5 rounded border transition-all ${aiMode === m.value ? m.color : "border-border text-muted-foreground"}`}>
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {!botActive && (
+                  <div className="hidden sm:flex gap-1">
+                    {AI_MODES.map(m => (
+                      <button key={m.value} onClick={() => setAiMode(m.value)}
+                        className={`text-[10px] px-1.5 py-0.5 rounded border transition-all ${aiMode === m.value ? m.color : "border-border text-muted-foreground"}`}>
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <Button size="sm" disabled={botLoading}
                   onClick={async () => {
-                    if (!botActive && !waStatus.connected) { toast({ title: "Connect WhatsApp first", variant: "destructive" }); return; }
+                    if (!botActive && !waStatus.connected) { toast({ title: "Connect WhatsApp first", description: "The bot needs WhatsApp to send signals to subscribers.", variant: "destructive" }); return; }
                     setBotLoading(true);
                     try {
                       if (botActive) {
                         await fetch("/api/bot/stop", { method: "POST" });
-                        toast({ title: "🔴 Bot paused", description: "Auto-scanning stopped" });
+                        toast({ title: "🔴 Bot stopped", description: "Autonomous scanning paused" });
                       } else {
                         await fetch("/api/bot/start", {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ mode: aiMode, intervalMinutes: 30 }),
                         });
-                        toast({ title: "🟢 Bot activated!", description: `Scanning in ${aiMode} mode every 30 min` });
+                        toast({ title: "🟢 Bot is live!", description: `Scanning all pairs in ${aiMode} mode. First scan running now…` });
                       }
                       qc.invalidateQueries({ queryKey: ["signals"] });
                       refetchBot();
@@ -483,10 +484,43 @@ export default function Trading() {
                     } finally { setBotLoading(false); }
                   }}
                   className={botActive ? "bg-red-500 hover:bg-red-600 text-white" : "bg-indigo-600 hover:bg-indigo-700 text-white"}>
-                  {botLoading ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin"/> : botActive ? <><Pause className="w-3.5 h-3.5 mr-1"/>Pause</> : <><Play className="w-3.5 h-3.5 mr-1"/>Start</>}
+                  {botLoading ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin"/> : botActive ? <><Pause className="w-3.5 h-3.5 mr-1"/>Stop</> : <><Play className="w-3.5 h-3.5 mr-1"/>Start Bot</>}
                 </Button>
               </div>
             </div>
+
+            {/* Live status row — only when active */}
+            {botActive && (
+              <div className="mt-1 space-y-1.5">
+                {/* Current action */}
+                {botStatus?.currentAction && (
+                  <div className="flex items-center gap-2 text-[11px] text-indigo-400 bg-indigo-500/5 border border-indigo-500/20 rounded-md px-2.5 py-1.5">
+                    <Loader2 className="w-3 h-3 animate-spin flex-shrink-0" />
+                    <span className="font-mono">{botStatus.currentAction}</span>
+                  </div>
+                )}
+                {/* Stats row */}
+                <div className="grid grid-cols-4 gap-2 text-center">
+                  {[
+                    { label: "Signals Today", val: botStatus?.signalsToday ?? 0, color: "text-green-500" },
+                    { label: "Pairs Watched", val: botStatus?.pairs?.length ?? 7, color: "text-blue-500" },
+                    { label: "Last Signal", val: botStatus?.lastSignalPair ?? "—", color: "text-yellow-500" },
+                    { label: "Next Scan", val: botStatus?.nextScanAt ? new Date(botStatus.nextScanAt).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "—", color: "text-indigo-400" },
+                  ].map(s => (
+                    <div key={s.label} className="bg-muted/40 rounded-md py-1.5 px-1">
+                      <div className={`text-sm font-bold ${s.color}`}>{s.val}</div>
+                      <div className="text-[9px] text-muted-foreground leading-tight mt-0.5">{s.label}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Pairs being watched */}
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {(botStatus?.pairs ?? []).map(p => (
+                    <span key={p} className="text-[10px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded px-1.5 py-0.5 font-mono">{p}</span>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
       </div>
