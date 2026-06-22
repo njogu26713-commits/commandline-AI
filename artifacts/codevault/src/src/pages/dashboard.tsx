@@ -190,7 +190,7 @@ export default function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="space-y-8">
-              {activity?.slice(0, 5).map((item) => (
+              {Array.isArray(activity) && activity.slice(0, 5).map((item) => (
                 <div key={item.id} className="flex items-center">
                   <span className="relative flex h-2 w-2 mr-4">
                     <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
