@@ -240,7 +240,7 @@ export default function Trading() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Zap className="w-6 h-6 text-green-500" /> CodeMind Signals
+            <Zap className="w-6 h-6 text-green-500" /> CommandLine Signals
           </h1>
           <p className="text-sm text-muted-foreground">AI-powered WhatsApp trading bot</p>
         </div>

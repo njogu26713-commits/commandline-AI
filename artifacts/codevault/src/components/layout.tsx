@@ -38,7 +38,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <Zap className="w-4 h-4 text-white" />
             </div>
             <div>
-              <div className="font-bold text-sm leading-tight">CodeMind Signals</div>
+              <div className="font-bold text-sm leading-tight">CommandLine Signals</div>
               <div className="text-[10px] text-muted-foreground leading-tight">AI Trading Bot</div>
             </div>
           </div>
