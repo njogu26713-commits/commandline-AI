@@ -279,6 +279,27 @@ export async function sendWAMessage(phone: string, message: string) {
   await state.sock.sendMessage(jid, { text: message });
 }
 
+// Send multiple messages with typing indicator between each — feels human
+export async function sendTypingMessages(
+  phone: string,
+  messages: string[],
+  typingMs = 3000,
+) {
+  if (!state.sock || !state.connected) throw new Error("WhatsApp not connected");
+  const jid = phone.replace(/[^0-9]/g, "") + "@s.whatsapp.net";
+  for (let i = 0; i < messages.length; i++) {
+    // Show "typing…"
+    await state.sock.sendPresenceUpdate("composing", jid);
+    await delay(typingMs);
+    // Stop typing then send
+    await state.sock.sendPresenceUpdate("paused", jid);
+    await delay(200);
+    await state.sock.sendMessage(jid, { text: messages[i] });
+    // Brief pause between messages so subscriber can read
+    if (i < messages.length - 1) await delay(1500);
+  }
+}
+
 // ── Broadcast with conversational flow ────────────────────────────────────────
 export async function broadcastSignal(
   signal: {

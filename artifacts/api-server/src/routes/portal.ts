@@ -94,41 +94,30 @@ router.post("/portal/connect", async (req, res) => {
     // Try to send a WhatsApp welcome message via Baileys
     let waConnected = false;
     try {
-      const { sendWAMessage, getWAStatus } = await import("../services/whatsapp.js");
+      const { sendTypingMessages, getWAStatus } = await import("../services/whatsapp.js");
       const waState = getWAStatus();
       if (waState.connected) {
-        // Format phone for WhatsApp JID
-        const jid = clean.replace(/^\+/, "").replace(/^0/, "254");
+        const phone = clean.replace(/^\+/, "").replace(/^0/, "254");
         const planData = PLANS[sub.plan];
         const endsAt = sub.subscriptionEndsAt ? new Date(sub.subscriptionEndsAt) : null;
         const endsStr = endsAt ? endsAt.toLocaleDateString("en-KE", { day: "2-digit", month: "short", year: "numeric" }) : "N/A";
 
-        const msg = `╔══════════════════════════╗
-║  ⚡ COMMANDLINE SIGNALS   ║
-║     BOT CONNECTED ✅      ║
-╚══════════════════════════╝
+        const msgs = [
+          // Message 1 — greeting
+          `╔══════════════════════════╗\n║  ⚡ COMMANDLINE SIGNALS   ║\n║     BOT CONNECTED ✅      ║\n╚══════════════════════════╝\n\nHey ${sub.name}! 👋 Welcome aboard.\n\nYour bot is now *LIVE* and connected to this number. Signals will be delivered here automatically.`,
 
-Hey ${sub.name}! 👋
+          // Message 2 — plan details
+          `📦 *Your Plan Details*\n\n• Plan: *${planData.name.toUpperCase()}*\n• Signals: *${planData.signals}*\n• Expires: *${endsStr}*\n• Days left: *${endsAt ? Math.max(0, Math.ceil((endsAt.getTime() - Date.now()) / 86400000)) : "N/A"} days*`,
 
-Your bot is now *LIVE* and connected to this number.
+          // Message 3 — what to expect
+          `📡 *What Each Signal Looks Like:*\n\n📍 Entry Price\n🎯 Take Profit 1 & 2\n🛑 Stop Loss\n📊 Confidence %\n⚖️ Risk Level\n\nAlways use proper risk management. Never risk more than 1-2% per trade. 🧠`,
 
-📦 Plan: *${planData.name.toUpperCase()}*
-📅 Expires: *${endsStr}*
-📡 Signals: *${planData.signals}*
+          // Message 4 — close
+          `Stay sharp. Stay profitable. Let's get it! 🚀\n\n_CommandLine Signals — AI-Powered Trading Bot_\n_Reply STOP to unsubscribe_`,
+        ];
 
-You'll receive real-time trading signals directly here on WhatsApp.
-
-Each signal includes:
-• Entry price
-• Take Profit targets (TP1 & TP2)
-• Stop Loss level
-• Confidence % + Risk rating
-
-Stay sharp. Stay profitable. 🎯
-
-_CommandLine Signals — AI-Powered Trading Bot_`;
-
-        await sendWAMessage(jid, msg);
+        // Run in background — don't await so API responds fast
+        sendTypingMessages(phone, msgs, 3000).catch(() => {});
         waConnected = true;
       }
     } catch (e) {
