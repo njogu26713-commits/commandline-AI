@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from "react";
-import { 
-  useListAiSessions, 
-  useGetAiMessages, 
-  useCreateAiSession, 
+import {
+  useListAiSessions,
+  useGetAiMessages,
+  useCreateAiSession,
   useSendAiMessage,
   getListAiSessionsQueryKey,
   getGetAiMessagesQueryKey
@@ -12,10 +12,43 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Bot, User, Plus, MessageSquare, Send, Code } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Bot, User, Plus, MessageSquare, Send, TrendingUp, BarChart2, Zap, RefreshCw } from "lucide-react";
 import { PageTransition } from "@/components/page-transition";
 
-export default function AiBuilder() {
+const QUICK_PROMPTS = [
+  { label: "BTC Analysis", prompt: "Analyze Bitcoin right now. Should I buy or sell? Give me entry, TP and SL levels.", icon: "₿" },
+  { label: "ETH Signal", prompt: "Give me a trading signal for Ethereum with current market conditions.", icon: "Ξ" },
+  { label: "Market Overview", prompt: "Give me a quick overview of the current crypto market — BTC, ETH, SOL. What's the sentiment?", icon: "📊" },
+  { label: "Best Signal Now", prompt: "Which crypto pair has the strongest signal right now? Scan BTC, ETH, SOL and BNB and give me the best trade.", icon: "🎯" },
+  { label: "Risk Check", prompt: "I'm thinking of buying BTC. What's the current risk level and what should my stop-loss be?", icon: "⚠️" },
+  { label: "SOL Trade", prompt: "Analyze Solana and give me a precise entry, take profit and stop loss for today.", icon: "◎" },
+];
+
+function formatMessage(content: string) {
+  const lines = content.split("\n");
+  return lines.map((line, i) => {
+    if (line.startsWith("## ")) return <h3 key={i} className="font-bold text-sm mt-3 mb-1">{line.slice(3)}</h3>;
+    if (line.startsWith("# "))  return <h2 key={i} className="font-bold text-base mt-3 mb-1">{line.slice(2)}</h2>;
+    if (line.startsWith("**") && line.endsWith("**")) return <p key={i} className="font-semibold">{line.slice(2, -2)}</p>;
+
+    // Inline bold
+    const parts = line.split(/(\*\*[^*]+\*\*)/g);
+    const rendered = parts.map((p, j) =>
+      p.startsWith("**") && p.endsWith("**")
+        ? <strong key={j}>{p.slice(2, -2)}</strong>
+        : p
+    );
+
+    if (line.startsWith("- ") || line.startsWith("• ")) {
+      return <li key={i} className="ml-4 list-disc">{rendered.slice(1)}</li>;
+    }
+    if (line.trim() === "") return <div key={i} className="h-2" />;
+    return <p key={i}>{rendered}</p>;
+  });
+}
+
+export default function AiAnalyst() {
   const queryClient = useQueryClient();
   const { data: sessions, isLoading: sessionsLoading } = useListAiSessions();
   const createSession = useCreateAiSession();
@@ -31,18 +64,18 @@ export default function AiBuilder() {
     }
   }, [sessions, activeSessionId]);
 
-  const { data: messages, isLoading: messagesLoading } = useGetAiMessages(activeSessionId || 0, { 
-    query: { enabled: !!activeSessionId, queryKey: getGetAiMessagesQueryKey(activeSessionId || 0) } 
+  const { data: messages, isLoading: messagesLoading } = useGetAiMessages(activeSessionId || 0, {
+    query: { enabled: !!activeSessionId, queryKey: getGetAiMessagesQueryKey(activeSessionId || 0) }
   });
 
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages]);
+  }, [messages, sendMessage.isPending]);
 
   const handleNewSession = () => {
-    createSession.mutate({ data: { title: "New Session" } }, {
+    createSession.mutate({ data: { title: "Market Analysis" } }, {
       onSuccess: (newSession) => {
         queryClient.invalidateQueries({ queryKey: getListAiSessionsQueryKey() });
         setActiveSessionId(newSession.id);
@@ -50,46 +83,49 @@ export default function AiBuilder() {
     });
   };
 
-  const handleSendMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || !activeSessionId) return;
-    
-    const content = input;
+  const send = (text: string) => {
+    if (!text.trim() || !activeSessionId || sendMessage.isPending) return;
     setInput("");
-    
-    // Optimistically add message
-    const previousMessages = queryClient.getQueryData(getGetAiMessagesQueryKey(activeSessionId)) as any[];
+
+    const previousMessages = queryClient.getQueryData(getGetAiMessagesQueryKey(activeSessionId)) as any[] | undefined;
     if (previousMessages) {
       queryClient.setQueryData(getGetAiMessagesQueryKey(activeSessionId), [
         ...previousMessages,
-        { id: Date.now(), sessionId: activeSessionId, role: "user", content, createdAt: new Date().toISOString() }
+        { id: Date.now(), sessionId: activeSessionId, role: "user", content: text, createdAt: new Date().toISOString() }
       ]);
     }
 
-    sendMessage.mutate({ id: activeSessionId, data: { content } }, {
+    sendMessage.mutate({ id: activeSessionId, data: { content: text } }, {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getGetAiMessagesQueryKey(activeSessionId) });
+        queryClient.invalidateQueries({ queryKey: getListAiSessionsQueryKey() });
       },
       onError: () => {
-        // Revert optimistic update
         queryClient.invalidateQueries({ queryKey: getGetAiMessagesQueryKey(activeSessionId) });
       }
     });
   };
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    send(input);
+  };
+
+  const isEmpty = !messages?.length && !sendMessage.isPending;
+
   return (
     <PageTransition className="flex h-[calc(100vh-8rem)] bg-background border rounded-xl overflow-hidden shadow-sm">
       {/* Sidebar */}
-      <div className="w-80 border-r flex flex-col bg-muted/30">
+      <div className="w-72 border-r flex flex-col bg-muted/30">
         <div className="p-4 border-b">
-          <Button onClick={handleNewSession} className="w-full justify-start gap-2" disabled={createSession.isPending}>
-            <Plus className="w-4 h-4" /> New Chat
+          <Button onClick={handleNewSession} className="w-full justify-start gap-2" variant="outline" disabled={createSession.isPending}>
+            <Plus className="w-4 h-4" /> New Analysis
           </Button>
         </div>
         <ScrollArea className="flex-1">
           {sessionsLoading ? (
             <div className="p-4 space-y-2">
-              {[1,2,3].map(i => <Skeleton key={i} className="h-12 w-full rounded-md" />)}
+              {[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full rounded-md" />)}
             </div>
           ) : (
             <div className="p-2 space-y-1">
@@ -97,118 +133,162 @@ export default function AiBuilder() {
                 <button
                   key={session.id}
                   onClick={() => setActiveSessionId(session.id)}
-                  className={`w-full text-left flex items-center gap-3 px-3 py-3 rounded-lg text-sm transition-colors ${
-                    activeSessionId === session.id 
-                      ? 'bg-primary/10 text-primary font-medium' 
-                      : 'hover:bg-muted text-muted-foreground'
+                  className={`w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                    activeSessionId === session.id
+                      ? "bg-green-500/10 text-green-600 dark:text-green-400 font-medium"
+                      : "hover:bg-muted text-muted-foreground"
                   }`}
                 >
                   <MessageSquare className="w-4 h-4 shrink-0" />
-                  <div className="flex-1 truncate">{session.title}</div>
+                  <span className="flex-1 truncate">{session.title}</span>
+                  {session.messageCount > 0 && (
+                    <Badge variant="secondary" className="text-[10px] px-1 py-0 h-4">{session.messageCount}</Badge>
+                  )}
                 </button>
               ))}
             </div>
           )}
         </ScrollArea>
+
+        {/* Live data badge */}
+        <div className="p-3 border-t">
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground bg-muted rounded-lg px-3 py-2">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+            Live Binance data · Gemini AI
+          </div>
+        </div>
       </div>
 
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col bg-card relative">
+      {/* Main Chat */}
+      <div className="flex-1 flex flex-col bg-card">
+        {/* Header */}
+        <div className="p-4 border-b flex items-center justify-between bg-card">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center">
+              <Bot className="w-5 h-5 text-green-500" />
+            </div>
+            <div>
+              <div className="font-semibold text-sm">CommandLine AI Analyst</div>
+              <div className="text-[10px] text-muted-foreground">Live market data · Real signals</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline" className="gap-1 text-[10px]">
+              <TrendingUp className="w-3 h-3 text-green-500" /> Crypto
+            </Badge>
+            <Badge variant="outline" className="gap-1 text-[10px]">
+              <BarChart2 className="w-3 h-3 text-blue-500" /> Forex
+            </Badge>
+          </div>
+        </div>
+
         {activeSessionId ? (
           <>
-            <div className="p-4 border-b flex items-center justify-between bg-card z-10">
-              <div className="font-semibold flex items-center gap-2">
-                <Bot className="w-5 h-5 text-primary" />
-                CommandLine AI Assistant
-              </div>
-              <Button variant="outline" size="sm" className="gap-2">
-                <Code className="w-4 h-4" /> Current Context
-              </Button>
-            </div>
-            
-            <div className="flex-1 overflow-y-auto p-4 space-y-6" ref={scrollRef}>
+            {/* Messages */}
+            <div className="flex-1 overflow-y-auto p-4 space-y-4" ref={scrollRef}>
               {messagesLoading ? (
                 <div className="space-y-4">
-                  <Skeleton className="h-20 w-3/4 ml-auto rounded-2xl rounded-tr-sm" />
-                  <Skeleton className="h-32 w-3/4 rounded-2xl rounded-tl-sm" />
+                  <Skeleton className="h-16 w-2/3 ml-auto rounded-2xl" />
+                  <Skeleton className="h-28 w-3/4 rounded-2xl" />
                 </div>
-              ) : messages?.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-muted-foreground space-y-4">
-                  <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                    <Bot className="w-8 h-8 text-primary" />
+              ) : isEmpty ? (
+                <div className="h-full flex flex-col items-center justify-center gap-6 py-8">
+                  <div className="text-center space-y-2">
+                    <div className="w-16 h-16 rounded-full bg-green-500/10 flex items-center justify-center mx-auto">
+                      <Zap className="w-8 h-8 text-green-500" />
+                    </div>
+                    <h3 className="font-semibold">AI Market Analyst</h3>
+                    <p className="text-sm text-muted-foreground max-w-xs">
+                      Ask me to analyze any market, generate signals, or explain trends — I'll fetch live data from Binance.
+                    </p>
                   </div>
-                  <p>How can I help you trade today?</p>
+
+                  {/* Quick prompts */}
+                  <div className="grid grid-cols-2 gap-2 w-full max-w-lg">
+                    {QUICK_PROMPTS.map((qp) => (
+                      <button
+                        key={qp.label}
+                        onClick={() => send(qp.prompt)}
+                        disabled={sendMessage.isPending}
+                        className="text-left p-3 rounded-xl border border-border hover:border-green-500/50 hover:bg-green-500/5 transition-all group"
+                      >
+                        <div className="text-base mb-1">{qp.icon}</div>
+                        <div className="text-xs font-medium group-hover:text-green-600 dark:group-hover:text-green-400">{qp.label}</div>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               ) : (
                 messages?.map((msg) => (
-                  <div 
-                    key={msg.id} 
-                    className={`flex gap-3 max-w-[80%] ${msg.role === 'user' ? 'ml-auto' : ''}`}
-                  >
-                    {msg.role !== 'user' && (
-                      <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center shrink-0 mt-1">
-                        <Bot className="w-5 h-5 text-primary" />
+                  <div key={msg.id} className={`flex gap-3 ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
+                    {msg.role !== "user" && (
+                      <div className="w-7 h-7 rounded-lg bg-green-500/10 flex items-center justify-center shrink-0 mt-1">
+                        <Bot className="w-4 h-4 text-green-500" />
                       </div>
                     )}
-                    
-                    <div className={`p-4 rounded-2xl ${
-                      msg.role === 'user' 
-                        ? 'bg-primary text-primary-foreground rounded-tr-sm' 
-                        : 'bg-muted rounded-tl-sm border'
+                    <div className={`max-w-[78%] p-3.5 rounded-2xl text-sm leading-relaxed ${
+                      msg.role === "user"
+                        ? "bg-primary text-primary-foreground rounded-tr-sm"
+                        : "bg-muted rounded-tl-sm border"
                     }`}>
-                      <div className="text-sm whitespace-pre-wrap leading-relaxed">
-                        {msg.content}
-                      </div>
+                      {msg.role === "user"
+                        ? <p className="whitespace-pre-wrap">{msg.content}</p>
+                        : <div className="space-y-0.5">{formatMessage(msg.content)}</div>
+                      }
                     </div>
-
-                    {msg.role === 'user' && (
-                      <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center shrink-0 mt-1">
-                        <User className="w-5 h-5" />
+                    {msg.role === "user" && (
+                      <div className="w-7 h-7 rounded-full bg-secondary flex items-center justify-center shrink-0 mt-1">
+                        <User className="w-4 h-4" />
                       </div>
                     )}
                   </div>
                 ))
               )}
+
               {sendMessage.isPending && (
-                <div className="flex gap-3 max-w-[80%]">
-                  <div className="w-8 h-8 rounded bg-primary/10 flex items-center justify-center shrink-0 mt-1">
-                    <Bot className="w-5 h-5 text-primary" />
+                <div className="flex gap-3 justify-start">
+                  <div className="w-7 h-7 rounded-lg bg-green-500/10 flex items-center justify-center shrink-0 mt-1">
+                    <Bot className="w-4 h-4 text-green-500" />
                   </div>
-                  <div className="p-4 rounded-2xl bg-muted rounded-tl-sm border flex items-center gap-1">
-                    <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce"></span>
-                    <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce [animation-delay:0.2s]"></span>
-                    <span className="w-2 h-2 bg-primary/50 rounded-full animate-bounce [animation-delay:0.4s]"></span>
+                  <div className="p-3.5 rounded-2xl bg-muted rounded-tl-sm border flex items-center gap-1.5">
+                    <RefreshCw className="w-3.5 h-3.5 text-green-500 animate-spin" />
+                    <span className="text-xs text-muted-foreground">Fetching live data & analyzing…</span>
                   </div>
                 </div>
               )}
             </div>
 
+            {/* Input */}
             <div className="p-4 bg-card border-t">
-              <form onSubmit={handleSendMessage} className="relative flex items-center max-w-4xl mx-auto">
+              <form onSubmit={handleSubmit} className="relative flex items-center max-w-4xl mx-auto">
                 <Input
                   value={input}
                   onChange={(e) => setInput(e.target.value)}
-                  placeholder="Ask CommandLine AI to analyze markets, build strategies, or explain signals..."
-                  className="pr-12 py-6 rounded-xl shadow-sm bg-background border-muted-foreground/20 focus-visible:ring-primary/50"
+                  placeholder="Ask about BTC, ETH, market trends, or request a signal…"
+                  className="pr-12 py-5 rounded-xl bg-background border-border focus-visible:ring-green-500/50"
                   disabled={sendMessage.isPending}
                 />
-                <Button 
-                  type="submit" 
-                  size="icon" 
-                  className="absolute right-2 h-9 w-9 rounded-lg"
+                <Button
+                  type="submit"
+                  size="icon"
+                  className="absolute right-2 h-8 w-8 rounded-lg bg-green-600 hover:bg-green-700"
                   disabled={!input.trim() || sendMessage.isPending}
                 >
-                  <Send className="w-4 h-4" />
+                  <Send className="w-3.5 h-3.5" />
                 </Button>
               </form>
-              <div className="text-center mt-2 text-[10px] text-muted-foreground">
-                CommandLine AI can make mistakes. Always verify signals before trading.
-              </div>
+              <p className="text-center mt-2 text-[10px] text-muted-foreground">
+                AI uses live Binance prices. Always manage your risk — never risk more than 1–2% per trade.
+              </p>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-muted-foreground">
-            Select or create a session to start analyzing.
+          <div className="flex-1 flex flex-col items-center justify-center gap-4 text-muted-foreground">
+            <Bot className="w-10 h-10 opacity-30" />
+            <p className="text-sm">Create a new analysis session to start</p>
+            <Button onClick={handleNewSession} variant="outline" className="gap-2">
+              <Plus className="w-4 h-4" /> New Analysis
+            </Button>
           </div>
         )}
       </div>
