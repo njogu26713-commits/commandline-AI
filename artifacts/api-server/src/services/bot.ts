@@ -1,7 +1,7 @@
 import { db } from "@workspace/db";
 import { tradingSignalsTable, subscribersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { getMarketData, getKlines, buildMarketContext, type Kline } from "./binance.js";
+import { getMarketData, getKlines, buildMarketContext, computeTA, type Kline } from "./binance.js";
 import { broadcastSignal } from "./whatsapp.js";
 import { logger } from "../lib/logger.js";
 
@@ -32,30 +32,6 @@ let state: BotState = {
 let timerId: NodeJS.Timeout | null = null;
 let pairIndex = 0;
 
-// ── Simple TA helpers ─────────────────────────────────────────────────────────
-function calcEMA(values: number[], period: number): number[] {
-  const k = 2 / (period + 1);
-  const ema: number[] = [];
-  let prev = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
-  for (let i = period; i < values.length; i++) {
-    prev = values[i] * k + prev * (1 - k);
-    ema.push(prev);
-  }
-  return ema;
-}
-
-function calcRSI(closes: number[], period = 14): number {
-  if (closes.length < period + 1) return 50;
-  const changes = closes.slice(1).map((c, i) => c - closes[i]);
-  const gains = changes.map(c => (c > 0 ? c : 0));
-  const losses = changes.map(c => (c < 0 ? -c : 0));
-  const avgGain = gains.slice(-period).reduce((a, b) => a + b, 0) / period;
-  const avgLoss = losses.slice(-period).reduce((a, b) => a + b, 0) / period;
-  if (avgLoss === 0) return 100;
-  const rs = avgGain / avgLoss;
-  return 100 - 100 / (1 + rs);
-}
-
 interface TaSignal {
   direction: "BUY" | "SELL";
   confidence: number;
@@ -65,64 +41,74 @@ interface TaSignal {
   riskLevel: "Low" | "Medium" | "High";
 }
 
+// Multi-indicator TA signal using RSI + MACD + EMA + BB + volume confluence
 function analyzeTA(klines: Kline[], currentPrice: number, mode: string): TaSignal | null {
-  if (klines.length < 25) return null;
+  if (klines.length < 50) return null;
 
-  const closes = klines.map(k => k.close);
-  const rsi    = calcRSI(closes, 14);
-  const ema9   = calcEMA(closes, 9);
-  const ema21  = calcEMA(closes, 21);
+  const ticker = { price: currentPrice } as any;
+  const ta = computeTA(klines, ticker);
 
-  const lastEma9  = ema9[ema9.length - 1];
-  const prevEma9  = ema9[ema9.length - 2];
-  const lastEma21 = ema21[ema21.length - 1];
-  const prevEma21 = ema21[ema21.length - 2];
+  // Score bullish/bearish signals
+  let bullScore = 0;
+  let bearScore = 0;
 
-  const emaCrossBull = prevEma9 <= prevEma21 && lastEma9 > lastEma21;
-  const emaCrossBear = prevEma9 >= prevEma21 && lastEma9 < lastEma21;
+  // RSI
+  if (ta.rsi14 < 35) bullScore += 2;
+  else if (ta.rsi14 < 45) bullScore += 1;
+  if (ta.rsi14 > 65) bearScore += 2;
+  else if (ta.rsi14 > 55) bearScore += 1;
 
-  const rsiOversold    = rsi < (mode === "aggressive" ? 40 : 35);
-  const rsiOverbought  = rsi > (mode === "aggressive" ? 60 : 65);
-  const rsiNeutralBull = rsi > 45 && rsi < 60;
-  const rsiNeutralBear = rsi > 40 && rsi < 55;
+  // EMA trend alignment
+  if (ta.ema9 > ta.ema21 && ta.ema21 > ta.ema50) bullScore += 2;
+  else if (ta.ema9 > ta.ema21) bullScore += 1;
+  if (ta.ema9 < ta.ema21 && ta.ema21 < ta.ema50) bearScore += 2;
+  else if (ta.ema9 < ta.ema21) bearScore += 1;
 
+  // MACD
+  if (ta.macdHistogram > 0 && ta.macdLine > ta.macdSignal) bullScore += 2;
+  else if (ta.macdHistogram > 0) bullScore += 1;
+  if (ta.macdHistogram < 0 && ta.macdLine < ta.macdSignal) bearScore += 2;
+  else if (ta.macdHistogram < 0) bearScore += 1;
+
+  // Bollinger Band position
+  if (ta.priceVsBB === "NEAR_LOWER" || ta.priceVsBB === "BELOW_LOWER") bullScore += 2;
+  if (ta.priceVsBB === "NEAR_UPPER" || ta.priceVsBB === "ABOVE_UPPER") bearScore += 2;
+
+  // Volume confirmation
+  if (ta.volumeSignal === "HIGH_SPIKE" || ta.volumeSignal === "ABOVE_AVG") {
+    if (bullScore > bearScore) bullScore += 1;
+    else bearScore += 1;
+  }
+
+  const minScore = mode === "conservative" ? 7 : mode === "balanced" ? 5 : 4;
   let direction: "BUY" | "SELL" | null = null;
-  let confidence = 70;
+  let confidence = 0;
 
-  if (emaCrossBull && (rsiOversold || rsiNeutralBull)) {
+  if (bullScore >= minScore && bullScore > bearScore + 1) {
     direction  = "BUY";
-    confidence = rsiOversold ? 82 : 73;
-  } else if (emaCrossBear && (rsiOverbought || rsiNeutralBear)) {
+    confidence = Math.min(55 + bullScore * 4, 90);
+  } else if (bearScore >= minScore && bearScore > bullScore + 1) {
     direction  = "SELL";
-    confidence = rsiOverbought ? 82 : 73;
-  } else if (rsiOversold && mode === "aggressive") {
-    direction  = "BUY";
-    confidence = 68;
-  } else if (rsiOverbought && mode === "aggressive") {
-    direction  = "SELL";
-    confidence = 68;
+    confidence = Math.min(55 + bearScore * 4, 90);
   }
 
   if (!direction) return null;
 
-  const minConf = mode === "conservative" ? 80 : mode === "balanced" ? 70 : 65;
-  if (confidence < minConf) return null;
-
-  const atr = klines.slice(-14).reduce((sum, k) => sum + (k.high - k.low), 0) / 14;
-
+  // ATR-based TP/SL
+  const atr = ta.atr14;
   let targetPrice: number;
   let stopLoss: number;
 
   if (direction === "BUY") {
-    stopLoss    = currentPrice - atr * 1.2;
-    targetPrice = currentPrice + atr * 2.5;
+    stopLoss    = Math.max(currentPrice - atr * 1.5, ta.support * 0.999);
+    targetPrice = currentPrice + atr * 3;
   } else {
-    stopLoss    = currentPrice + atr * 1.2;
-    targetPrice = currentPrice - atr * 2.5;
+    stopLoss    = Math.min(currentPrice + atr * 1.5, ta.resistance * 1.001);
+    targetPrice = currentPrice - atr * 3;
   }
 
   const riskLevel: "Low" | "Medium" | "High" =
-    confidence >= 80 ? "Low" : confidence >= 70 ? "Medium" : "High";
+    confidence >= 82 ? "Low" : confidence >= 72 ? "Medium" : "High";
 
   return {
     direction,
@@ -134,59 +120,67 @@ function analyzeTA(klines: Kline[], currentPrice: number, mode: string): TaSigna
   };
 }
 
-// ── Generate with Gemini (if key available), else pure TA ─────────────────────
+// ── Generate with Gemini + multi-indicator TA, else pure TA ──────────────────
 async function generateSignal(pair: string): Promise<TaSignal | null> {
   try {
     const [ticker, klines] = await Promise.all([
       getMarketData(pair, "crypto"),
-      getKlines(pair, "1h", 50),
+      getKlines(pair, "1h", 100),
     ]);
 
+    const marketContext = buildMarketContext(ticker, klines);
     const apiKey = process.env.GEMINI_API_KEY;
+
     if (apiKey) {
       try {
-        const marketContext = buildMarketContext(ticker, klines);
-        const mode          = state.mode;
-        const minConf       = mode === "conservative" ? 82 : mode === "balanced" ? 68 : 55;
+        const mode    = state.mode;
+        const minConf = mode === "conservative" ? 80 : mode === "balanced" ? 72 : 65;
 
         const { GoogleGenerativeAI } = await import("@google/generative-ai");
         const genAI = new GoogleGenerativeAI(apiKey);
         const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
 
-        const prompt = `You are a professional cryptocurrency trader for CommandLine Signals.
+        const prompt = `You are an elite crypto trading signal engine for CommandLine Signals bot.
 
-## LIVE MARKET DATA (Binance):
+## LIVE MULTI-INDICATOR MARKET DATA (Binance):
 ${marketContext}
 
 ## TASK:
-Analyze and generate a crypto trading signal. Risk mode: ${mode} (min confidence: ${minConf}%).
+Perform a professional technical analysis on ${pair}. Risk mode: ${mode}. Min confidence: ${minConf}%.
 
-If there is NO clear signal with at least ${minConf}% confidence, respond with: {"skip": true}
+Rules:
+- Only generate a signal if RSI + MACD + EMA ALL agree on direction (3-indicator confluence)
+- Use ATR for realistic TP/SL placement, minimum 1.5:1 risk/reward ratio
+- Entry must be within 0.5% of current price (${ticker.price})
+- If no clear high-probability setup exists, return {"skip": true}
 
-Otherwise respond ONLY with valid JSON (no markdown):
+Respond ONLY with valid JSON (no markdown, no explanation):
 {
   "direction": "BUY" or "SELL",
-  "entryPrice": <within 0.3% of current price ${ticker.price}>,
-  "targetPrice": <take profit, min 1.5:1 RR>,
-  "stopLoss": <tight, support/resistance based>,
-  "confidence": <integer ${minConf}-95>,
+  "entryPrice": <number within 0.5% of ${ticker.price}>,
+  "targetPrice": <number, min 1.5x the risk distance away>,
+  "stopLoss": <number, based on key support/resistance level>,
+  "confidence": <integer ${minConf}-92>,
   "riskLevel": "Low" or "Medium" or "High"
 }`;
 
         const result = await model.generateContent(prompt);
         const text   = result.response.text().trim();
         const match  = text.match(/\{[\s\S]*?\}/);
-        if (!match) throw new Error("No JSON");
+        if (!match) throw new Error("No JSON in response");
         const parsed = JSON.parse(match[0]);
         if (parsed.skip) return null;
 
+        // Validate parsed values are numbers
+        if (typeof parsed.direction !== "string" || typeof parsed.confidence !== "number") throw new Error("Invalid JSON shape");
+
         return {
-          direction:   parsed.direction,
-          confidence:  parsed.confidence,
-          entryPrice:  parsed.entryPrice,
-          targetPrice: parsed.targetPrice,
-          stopLoss:    parsed.stopLoss,
-          riskLevel:   parsed.riskLevel ?? "Medium",
+          direction:   parsed.direction as "BUY" | "SELL",
+          confidence:  Math.min(Math.round(parsed.confidence), 92),
+          entryPrice:  parseFloat(parsed.entryPrice),
+          targetPrice: parseFloat(parsed.targetPrice),
+          stopLoss:    parseFloat(parsed.stopLoss),
+          riskLevel:   (parsed.riskLevel ?? "Medium") as "Low" | "Medium" | "High",
         };
       } catch (e) {
         logger.warn({ err: e }, "Gemini failed, falling back to TA");

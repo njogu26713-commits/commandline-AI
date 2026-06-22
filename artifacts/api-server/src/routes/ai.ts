@@ -2,11 +2,10 @@ import { Router } from "express";
 import { db } from "@workspace/db";
 import { aiSessionsTable, aiMessagesTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
-import { getMarketData, getKlines, buildMarketContext } from "../services/binance.js";
+import { getDeepAnalysis } from "../services/binance.js";
 
 const router = Router();
 
-// ── Known crypto pairs to auto-detect in user messages ───────────────────────
 const KNOWN_PAIRS: Record<string, string> = {
   BTC: "BTCUSDT", BITCOIN: "BTCUSDT",
   ETH: "ETHUSDT", ETHEREUM: "ETHUSDT",
@@ -17,7 +16,7 @@ const KNOWN_PAIRS: Record<string, string> = {
   ADA: "ADAUSDT", CARDANO: "ADAUSDT",
   MATIC: "MATICUSDT", POLYGON: "MATICUSDT",
   BTCUSDT: "BTCUSDT", ETHUSDT: "ETHUSDT", SOLUSDT: "SOLUSDT",
-  BNBUSDT: "BNBUSDT", XRPUSDT: "XRPUSDT",
+  BNBUSDT: "BNBUSDT", XRPUSDT: "XRPUSDT", DOGEUSDT: "DOGEUSDT",
 };
 
 function detectPairs(text: string): string[] {
@@ -26,35 +25,55 @@ function detectPairs(text: string): string[] {
   for (const [keyword, symbol] of Object.entries(KNOWN_PAIRS)) {
     if (upper.includes(keyword)) found.add(symbol);
   }
+  // Default to BTC + ETH if nothing mentioned
+  if (found.size === 0) { found.add("BTCUSDT"); found.add("ETHUSDT"); }
   return Array.from(found).slice(0, 3);
 }
 
-async function fetchLiveContext(pairs: string[]): Promise<string> {
-  if (pairs.length === 0) pairs = ["BTCUSDT", "ETHUSDT"];
-  const results = await Promise.allSettled(
-    pairs.map(async (pair) => {
-      const [ticker, klines] = await Promise.all([
-        getMarketData(pair, "crypto"),
-        getKlines(pair, "1h", 20),
-      ]);
-      return buildMarketContext(ticker, klines);
-    })
-  );
-  return results
-    .filter((r): r is PromiseFulfilledResult<string> => r.status === "fulfilled")
-    .map((r) => r.value)
-    .join("\n\n---\n\n");
-}
+const SYSTEM_PROMPT = `You are CommandLine AI — an elite cryptocurrency trading analyst and signal provider for the CommandLine Signals bot.
+
+## Your expertise:
+- Professional technical analysis using RSI, MACD, EMA crossovers, Bollinger Bands, ATR, support/resistance
+- Multi-timeframe analysis (MTF confluence) — 15m, 1h, 4h alignment
+- High-probability trade setups with minimum 75%+ confidence
+- Risk management: proper position sizing, R:R ratios minimum 1.5:1
+
+## Signal format (use this EXACTLY when giving a signal):
+━━━━━━━━━━━━━━━━━━━━━━━
+🎯 SIGNAL: [PAIR] [BUY/SELL]
+━━━━━━━━━━━━━━━━━━━━━━━
+📍 Entry:      [price]
+🎯 Target 1:   [price] (+X%)
+🎯 Target 2:   [price] (+X%)
+🛑 Stop Loss:  [price] (-X%)
+📊 Confidence: [X]%
+⚖️ Risk/Reward: [X:1]
+⏱️ Timeframe:  [15m / 1h / 4h]
+━━━━━━━━━━━━━━━━━━━━━━━
+📋 ANALYSIS:
+• [Reason 1 — specific indicator/level]
+• [Reason 2]
+• [Reason 3]
+⚠️ Invalidated if price closes below/above [level]
+━━━━━━━━━━━━━━━━━━━━━━━
+
+## Rules:
+- ONLY give signals when at least 3 indicators align (RSI + MACD + EMA + volume)
+- MTF confluence required: 2+ timeframes must agree on direction
+- Never give a signal below 72% confidence — say "NO CLEAR SETUP" instead
+- Always give 2 take-profit targets
+- Entry must be within 0.5% of current price
+- Stop loss must be below/above a key support/resistance level
+- Use ATR to calculate realistic TP and SL distances
+- Be concise and direct — traders need clarity, not essays
+- When asked for market overview, scan all provided pairs and rank them`;
 
 // ── Sessions ──────────────────────────────────────────────────────────────────
 router.get("/ai/sessions", async (req, res) => {
   try {
     const sessions = await db.select().from(aiSessionsTable).orderBy(desc(aiSessionsTable.updatedAt));
-    res.json(sessions.map((s) => ({ ...s, createdAt: s.createdAt.toISOString(), updatedAt: s.updatedAt.toISOString() })));
-  } catch (err) {
-    req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+    res.json(sessions.map(s => ({ ...s, createdAt: s.createdAt.toISOString(), updatedAt: s.updatedAt.toISOString() })));
+  } catch (err) { req.log.error(err); res.status(500).json({ error: "Internal server error" }); }
 });
 
 router.post("/ai/sessions", async (req, res) => {
@@ -63,24 +82,18 @@ router.post("/ai/sessions", async (req, res) => {
     if (!title) return res.status(400).json({ error: "title is required" });
     const [session] = await db.insert(aiSessionsTable).values({ title, projectId: projectId ?? null }).returning();
     res.status(201).json({ ...session, createdAt: session.createdAt.toISOString(), updatedAt: session.updatedAt.toISOString() });
-  } catch (err) {
-    req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+  } catch (err) { req.log.error(err); res.status(500).json({ error: "Internal server error" }); }
 });
 
 router.get("/ai/sessions/:id/messages", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const messages = await db.select().from(aiMessagesTable).where(eq(aiMessagesTable.sessionId, id)).orderBy(aiMessagesTable.createdAt);
-    res.json(messages.map((m) => ({ ...m, createdAt: m.createdAt.toISOString() })));
-  } catch (err) {
-    req.log.error(err);
-    res.status(500).json({ error: "Internal server error" });
-  }
+    res.json(messages.map(m => ({ ...m, createdAt: m.createdAt.toISOString() })));
+  } catch (err) { req.log.error(err); res.status(500).json({ error: "Internal server error" }); }
 });
 
-// ── Messages — real Gemini AI + live Binance data ─────────────────────────────
+// ── Messages — real Gemini AI + deep multi-timeframe Binance analysis ─────────
 router.post("/ai/sessions/:id/messages", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
@@ -90,7 +103,7 @@ router.post("/ai/sessions/:id/messages", async (req, res) => {
     // Save user message
     await db.insert(aiMessagesTable).values({ sessionId: id, role: "user", content }).returning();
 
-    // Load conversation history for context
+    // Load recent conversation history
     const history = await db.select().from(aiMessagesTable)
       .where(eq(aiMessagesTable.sessionId, id))
       .orderBy(aiMessagesTable.createdAt);
@@ -98,58 +111,53 @@ router.post("/ai/sessions/:id/messages", async (req, res) => {
     let aiContent: string;
 
     const apiKey = process.env.GEMINI_API_KEY;
-    if (apiKey) {
-      // Detect which pairs the user is asking about
-      const pairs   = detectPairs(content);
-      const liveCtx = await fetchLiveContext(pairs).catch(() => "");
+    if (!apiKey) {
+      aiContent = `⚠️ **Gemini AI key not configured.**\n\nAdd your GEMINI_API_KEY to environment secrets to enable live AI market analysis.`;
+    } else {
+      // Fetch deep multi-timeframe analysis for detected pairs
+      const pairs = detectPairs(content);
+      const analyses = await Promise.allSettled(
+        pairs.map(p => getDeepAnalysis(p, "crypto"))
+      );
+      const marketContext = analyses
+        .filter((r): r is PromiseFulfilledResult<any> => r.status === "fulfilled")
+        .map(r => r.value.context)
+        .join("\n\n");
 
       const { GoogleGenerativeAI } = await import("@google/generative-ai");
       const genAI = new GoogleGenerativeAI(apiKey);
       const model = genAI.getGenerativeModel({
         model: "gemini-2.5-flash",
-        systemInstruction: `You are CommandLine AI — an expert cryptocurrency and forex market analyst for the CommandLine Signals trading bot platform.
-
-Your role:
-- Analyze live market data and give clear, actionable trading insights
-- Suggest BUY/SELL signals with entry, target, and stop-loss levels when asked
-- Explain market conditions, trends, and price action in plain English
-- Be direct and confident — traders need clear answers, not vague hedging
-- Format numbers clearly (e.g. BTC at $67,420, TP at $69,000, SL at $66,500)
-- Use emojis sparingly to highlight key points (🟢 BUY, 🔴 SELL, ⚠️ caution, 📊 data)
-- Keep responses concise but complete — no fluff
-
-When you have live market data, always reference actual prices in your analysis.
-Always remind users to use proper risk management (1-2% per trade).`,
+        systemInstruction: SYSTEM_PROMPT,
       });
 
-      const chatHistory = history.slice(0, -1).slice(-10).map((m) => ({
+      const chatHistory = history.slice(0, -1).slice(-8).map(m => ({
         role: m.role === "user" ? "user" as const : "model" as const,
         parts: [{ text: m.content }],
       }));
 
       const chat = model.startChat({ history: chatHistory });
 
-      const userPrompt = liveCtx
-        ? `${content}\n\n## LIVE MARKET DATA (Binance, just fetched):\n${liveCtx}`
+      const userPrompt = marketContext
+        ? `USER REQUEST: ${content}\n\n## LIVE MULTI-TIMEFRAME MARKET DATA (just fetched from Binance):\n\n${marketContext}\n\nBased on this data, provide your expert analysis and signal(s).`
         : content;
 
       const result = await chat.sendMessage(userPrompt);
       aiContent = result.response.text();
 
-      // Auto-title session on first message
+      // Auto-title on first user message
       if (history.length <= 2) {
-        const titleResult = await model.generateContent(
-          `Generate a very short session title (max 5 words) for this trading chat. User said: "${content}". Reply with ONLY the title, no quotes.`
-        );
-        const newTitle = titleResult.response.text().trim().slice(0, 50);
-        await db.update(aiSessionsTable).set({ title: newTitle, updatedAt: new Date() }).where(eq(aiSessionsTable.id, id));
+        try {
+          const titleRes = await model.generateContent(
+            `Generate a very short session title (max 5 words, no quotes) for this trading chat. User said: "${content}"`
+          );
+          const newTitle = titleRes.response.text().trim().slice(0, 50);
+          await db.update(aiSessionsTable).set({ title: newTitle, updatedAt: new Date() }).where(eq(aiSessionsTable.id, id));
+        } catch {}
       }
-    } else {
-      aiContent = `⚠️ **Gemini AI not configured.**\n\nTo enable real market analysis, add your \`GEMINI_API_KEY\` to the environment variables.\n\nWithout it, the AI Analyst cannot generate live insights or trading suggestions.`;
     }
 
     const [aiMsg] = await db.insert(aiMessagesTable).values({ sessionId: id, role: "assistant", content: aiContent }).returning();
-
     const msgCount = await db.select().from(aiMessagesTable).where(eq(aiMessagesTable.sessionId, id));
     await db.update(aiSessionsTable).set({ messageCount: msgCount.length, updatedAt: new Date() }).where(eq(aiSessionsTable.id, id));
 
