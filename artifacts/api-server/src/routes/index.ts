@@ -9,6 +9,7 @@ import marketplaceRouter from "./marketplace";
 import usersRouter from "./users";
 import tradingRouter from "./trading";
 import whatsappRouter from "./whatsapp";
+import mpesaRouter from "./mpesa";
 
 const router: IRouter = Router();
 
@@ -22,5 +23,6 @@ router.use(marketplaceRouter);
 router.use(usersRouter);
 router.use(tradingRouter);
 router.use(whatsappRouter);
+router.use(mpesaRouter);
 
 export default router;

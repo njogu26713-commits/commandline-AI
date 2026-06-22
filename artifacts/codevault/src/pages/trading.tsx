@@ -1,153 +1,124 @@
-import {
-  useListTradingSignals,
-  useGetTradingStats,
-  useListSubscribers,
-  useGetTradingPerformance,
-  useCreateTradingSignal,
-  getListTradingSignalsQueryKey,
-} from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useState, useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer,
-  AreaChart, Area,
-} from "recharts";
-import {
-  TrendingUp, TrendingDown, Users, Activity, Plus, DollarSign,
-  Bot, Zap, ShieldAlert, ScanLine, Play, Pause, RefreshCw, Brain,
-  MessageCircle, Wifi, WifiOff, CheckCircle2, Clock, Sparkles, Loader2,
-  Bitcoin,
+  Zap, TrendingUp, TrendingDown, Users, DollarSign, Activity,
+  MessageCircle, Wifi, WifiOff, Sparkles, Loader2, Plus, CheckCircle2,
+  Clock, Bitcoin, RefreshCw, Bot, Play, Pause, FlaskConical,
+  ThumbsUp, ThumbsDown, BarChart2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PageTransition } from "@/components/page-transition";
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
-const CRYPTO_PAIRS = [
-  { pair: "BTC/USDT",  price: "$67,420", change: "+2.4%", sentiment: "BULLISH", strength: 82 },
-  { pair: "ETH/USDT",  price: "$3,510",  change: "+1.8%", sentiment: "BULLISH", strength: 74 },
-  { pair: "SOL/USDT",  price: "$172",    change: "-0.9%", sentiment: "NEUTRAL", strength: 51 },
-  { pair: "BNB/USDT",  price: "$598",    change: "+0.5%", sentiment: "BULLISH", strength: 63 },
-  { pair: "XRP/USDT",  price: "$0.62",   change: "-1.2%", sentiment: "BEARISH", strength: 38 },
-  { pair: "DOGE/USDT", price: "$0.18",   change: "-2.1%", sentiment: "BEARISH", strength: 29 },
-];
+// ── Types ─────────────────────────────────────────────────────────────────────
+interface WAStatus { connected: boolean; qr: string | null; phone: string | null; connecting: boolean; }
+interface Signal {
+  id: number; pair: string; direction: string; entryPrice: number;
+  targetPrice: number; stopLoss: number; confidence: number;
+  status: string; pnl: number | null; category: string; createdAt: string;
+}
+interface Stats {
+  totalSignals: number; winRate: number; activeSubscribers: number;
+  monthlyRevenue: number; totalPnl: number; closedSignals: number;
+}
 
-const FOREX_PAIRS = [
-  { pair: "EUR/USD", price: "1.0852", change: "+0.12%", sentiment: "BULLISH", strength: 71 },
-  { pair: "GBP/USD", price: "1.2704", change: "-0.08%", sentiment: "NEUTRAL", strength: 55 },
-  { pair: "USD/JPY", price: "149.54", change: "+0.31%", sentiment: "BULLISH", strength: 78 },
-  { pair: "XAU/USD", price: "2,324",  change: "+0.55%", sentiment: "BULLISH", strength: 84 },
-  { pair: "AUD/USD", price: "0.6558", change: "-0.19%", sentiment: "BEARISH", strength: 42 },
-  { pair: "EUR/GBP", price: "0.8558", change: "+0.04%", sentiment: "NEUTRAL", strength: 50 },
-];
+// ── Pairs ─────────────────────────────────────────────────────────────────────
+const CRYPTO_PAIRS = ["BTCUSDT","ETHUSDT","SOLUSDT","BNBUSDT","XRPUSDT","DOGEUSDT","ADAUSDT","MATICUSDT"];
+const FOREX_PAIRS  = ["EUR/USD","GBP/USD","USD/JPY","XAU/USD","AUD/USD","EUR/GBP","USD/CAD","NZD/USD"];
 
 const AI_MODES = [
-  { value: "conservative", label: "Conservative", desc: "High confidence only (>85%)", color: "text-blue-500" },
-  { value: "balanced",     label: "Balanced",     desc: "Moderate risk, above 70%",  color: "text-indigo-500" },
-  { value: "aggressive",  label: "Aggressive",   desc: "Higher risk, from 55%",      color: "text-orange-500" },
+  { value: "conservative", label: "Conservative", conf: ">82%", color: "border-blue-500 text-blue-500" },
+  { value: "balanced",     label: "Balanced",     conf: ">68%", color: "border-green-500 text-green-500" },
+  { value: "aggressive",   label: "Aggressive",   conf: ">55%", color: "border-orange-500 text-orange-500" },
 ];
 
-function RangeSlider({ min, max, step, value, onChange, label, unit, description }: {
-  min: number; max: number; step: number; value: number;
-  onChange: (v: number) => void; label: string; unit: string; description: string;
-}) {
-  return (
-    <div className="space-y-2">
-      <div className="flex justify-between text-sm">
-        <Label>{label}</Label>
-        <span className="font-bold text-indigo-500">{value}{unit}</span>
-      </div>
-      <input
-        type="range" min={min} max={max} step={step} value={value}
-        onChange={e => onChange(Number(e.target.value))}
-        className="w-full h-2 rounded-full appearance-none cursor-pointer bg-muted accent-indigo-600"
-      />
-      <p className="text-xs text-muted-foreground">{description}</p>
-    </div>
-  );
+// ── API hooks ─────────────────────────────────────────────────────────────────
+function useStats() {
+  return useQuery<Stats>({ queryKey: ["stats"], queryFn: () => fetch("/api/trading/stats").then(r => r.json()), refetchInterval: 30000 });
+}
+function useSignals() {
+  return useQuery<Signal[]>({ queryKey: ["signals"], queryFn: () => fetch("/api/trading/signals").then(r => r.json()), refetchInterval: 15000 });
+}
+function useUpdateSignal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: number; status: string; pnl?: number }) =>
+      fetch(`/api/trading/signals/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }).then(r => r.json()),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["signals"] }); qc.invalidateQueries({ queryKey: ["stats"] }); },
+  });
+}
+function useCreateSignal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: any) => fetch("/api/trading/signals", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) }).then(r => r.json()),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["signals"] }),
+  });
 }
 
-interface WAStatus {
-  connected: boolean;
-  qr: string | null;
-  phone: string | null;
-  connecting: boolean;
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function fmtPrice(n: number, cat?: string) {
+  if (cat === "forex") return n < 10 ? n.toFixed(5) : n.toFixed(2);
+  return n >= 1000 ? n.toLocaleString("en-US", { maximumFractionDigits: 0 }) : n >= 1 ? n.toFixed(2) : n.toFixed(6);
+}
+function riskColor(conf: number) { return conf >= 80 ? "text-green-500" : conf >= 65 ? "text-yellow-500" : "text-red-500"; }
+function statusBadge(status: string) {
+  if (status === "won")    return <Badge className="bg-green-500/10 text-green-500 border-green-500/30">✅ WON</Badge>;
+  if (status === "lost")   return <Badge className="bg-red-500/10 text-red-500 border-red-500/30">❌ LOST</Badge>;
+  if (status === "active") return <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/30 animate-pulse">🔵 ACTIVE</Badge>;
+  return <Badge variant="secondary">{status.toUpperCase()}</Badge>;
 }
 
+// ── Main Page ─────────────────────────────────────────────────────────────────
 export default function Trading() {
-  const { data: stats, isLoading: statsLoading }             = useGetTradingStats();
-  const { data: signals, isLoading: signalsLoading }         = useListTradingSignals();
-  const { data: subscribers, isLoading: subscribersLoading } = useListSubscribers();
-  const { data: performance }                                = useGetTradingPerformance();
+  const { data: stats, isLoading: statsLoading } = useStats();
+  const { data: signals = [], isLoading: sigsLoading } = useSignals();
+  const createSignal = useCreateSignal();
+  const updateSignal = useUpdateSignal();
+  const { toast } = useToast();
+  const qc = useQueryClient();
 
-  const createSignal = useCreateTradingSignal();
-  const queryClient  = useQueryClient();
-  const { toast }    = useToast();
+  // WhatsApp state
+  const [waStatus, setWaStatus] = useState<WAStatus>({ connected: false, qr: null, phone: null, connecting: false });
+  const [showQr, setShowQr]     = useState(false);
+  const [testingWA, setTestingWA] = useState(false);
+  const pollRef = useRef<any>(null);
+
+  // Bot state
+  const [botActive, setBotActive] = useState(false);
+  const [aiMode, setAiMode]       = useState("balanced");
+  const [autoScan, setAutoScan]   = useState(false);
 
   // Signal form
-  const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [newSignal, setNewSignal] = useState({
-    pair: "", direction: "BUY", entryPrice: "", targetPrice: "", stopLoss: "", confidence: "80", category: "crypto",
-  });
-  const [scanCategory, setScanCategory] = useState<"crypto" | "forex">("crypto");
-  const [aiReasoning, setAiReasoning] = useState("");
-  const [generatingAI, setGeneratingAI] = useState(false);
-  const [broadcasting, setBroadcasting] = useState(false);
-  const [testingWA, setTestingWA] = useState(false);
+  const [isOpen, setIsOpen]         = useState(false);
+  const [category, setCategory]     = useState<"crypto"|"forex">("crypto");
+  const [pair, setPair]             = useState("BTCUSDT");
+  const [form, setForm]             = useState({ direction: "BUY", entryPrice: "", targetPrice: "", stopLoss: "", confidence: "78", riskLevel: "Medium" });
+  const [aiReason, setAiReason]     = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [broadcasting, setBroadcast] = useState(false);
 
-  // WhatsApp state (real — from API)
-  const [waStatus, setWaStatus] = useState<WAStatus>({ connected: false, qr: null, phone: null, connecting: false });
-  const [showQrDialog, setShowQrDialog] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // Bot UI controls
-  const [botActive, setBotActive]       = useState(false);
-  const [aiMode, setAiMode]             = useState("balanced");
-  const [autoSignals, setAutoSignals]   = useState(false);
-  const [isScanning, setIsScanning]     = useState(false);
-  const [lastScan, setLastScan]         = useState<string | null>(null);
-
-  // Risk controls
-  const [maxRisk, setMaxRisk]                 = useState(2);
-  const [maxDailySignals, setMaxDailySignals] = useState(5);
-  const [tpMultiplier, setTpMultiplier]       = useState(2);
-  const [autoSl, setAutoSl]                   = useState(true);
-  const [compoundMode, setCompoundMode]       = useState(false);
-
-  // ── WhatsApp polling ──────────────────────────────────────────────────────
-  const fetchWAStatus = async () => {
+  // WA polling
+  const fetchWA = async () => {
     try {
-      const res = await fetch("/api/whatsapp/status");
-      const data: WAStatus = await res.json();
-      setWaStatus(data);
-      if (data.connected) {
-        setShowQrDialog(false);
-        stopPolling();
-      }
+      const d: WAStatus = await fetch("/api/whatsapp/status").then(r => r.json());
+      setWaStatus(d);
+      if (d.connected) { setShowQr(false); stopPoll(); }
     } catch {}
   };
-
-  const startPolling = () => {
-    if (pollRef.current) return;
-    pollRef.current = setInterval(fetchWAStatus, 2500);
-  };
-
-  const stopPolling = () => {
-    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
-  };
-
-  useEffect(() => {
-    fetchWAStatus();
-    return () => stopPolling();
-  }, []);
+  const startPoll = () => { if (!pollRef.current) pollRef.current = setInterval(fetchWA, 2500); };
+  const stopPoll  = () => { if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; } };
+  useEffect(() => { fetchWA(); return stopPoll; }, []);
 
   const handleConnectWA = async () => {
     if (waStatus.connected) {
@@ -157,288 +128,225 @@ export default function Trading() {
       toast({ title: "📵 WhatsApp Disconnected" });
       return;
     }
-    setShowQrDialog(true);
-    try {
-      await fetch("/api/whatsapp/connect", { method: "POST" });
-      startPolling();
-    } catch {
-      toast({ title: "Connection failed", variant: "destructive" });
-    }
+    setShowQr(true);
+    await fetch("/api/whatsapp/connect", { method: "POST" });
+    startPoll();
   };
 
-  // ── Send Test Message ─────────────────────────────────────────────────────
   const handleSendTest = async () => {
     setTestingWA(true);
     try {
-      const res = await fetch("/api/whatsapp/test", { method: "POST" });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      toast({ title: "🧪 Test message sent!", description: `Check your WhatsApp — sent to +${data.sentTo}` });
-    } catch (err: any) {
-      toast({ title: "Test failed", description: err.message, variant: "destructive" });
-    } finally {
-      setTestingWA(false);
-    }
+      const r = await fetch("/api/whatsapp/test", { method: "POST" });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      toast({ title: "🧪 Test sent!", description: `Check WhatsApp on +${d.sentTo}` });
+    } catch (e: any) {
+      toast({ title: "Test failed", description: e.message, variant: "destructive" });
+    } finally { setTestingWA(false); }
   };
 
-  // ── AI Signal Generation (Gemini) ─────────────────────────────────────────
-  const handleGenerateAI = async () => {
-    setGeneratingAI(true);
-    setAiReasoning("");
+  // AI generate
+  const handleGenerate = async () => {
+    setGenerating(true); setAiReason("");
     try {
-      const pair = newSignal.pair || "BTC/USDT";
-      const res = await fetch("/api/trading/signals/generate", {
+      const r = await fetch("/api/trading/signals/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pair, mode: aiMode, category: newSignal.category }),
+        body: JSON.stringify({ pair, mode: aiMode, category }),
       });
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setNewSignal(prev => ({
-        ...prev,
-        pair: data.pair,
-        direction: data.direction,
-        entryPrice: String(data.entryPrice),
-        targetPrice: String(data.targetPrice),
-        stopLoss: String(data.stopLoss),
-        confidence: String(data.confidence),
-      }));
-      setAiReasoning(data.reasoning ?? "");
-      toast({ title: "✨ AI Signal Generated", description: `${data.pair} ${data.direction} — ${data.confidence}% confidence` });
-    } catch (err: any) {
-      toast({ title: "AI generation failed", description: err.message, variant: "destructive" });
-    } finally {
-      setGeneratingAI(false);
-    }
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error);
+      setForm({
+        direction: d.direction,
+        entryPrice:  String(d.entryPrice),
+        targetPrice: String(d.targetPrice),
+        stopLoss:    String(d.stopLoss),
+        confidence:  String(d.confidence),
+        riskLevel:   d.riskLevel ?? "Medium",
+      });
+      setAiReason(d.reasoning ?? "");
+      toast({ title: `✨ ${d.direction} signal — ${d.confidence}% confidence`, description: `Live Binance data used for ${pair}` });
+    } catch (e: any) {
+      toast({ title: "AI failed", description: e.message, variant: "destructive" });
+    } finally { setGenerating(false); }
   };
 
-  // ── Broadcast Signal ──────────────────────────────────────────────────────
-  const handleCreate = async () => {
-    if (!newSignal.pair || !newSignal.entryPrice) return;
-    setBroadcasting(true);
+  // Broadcast
+  const handleBroadcast = async () => {
+    if (!form.entryPrice) return;
+    setBroadcast(true);
     try {
-      // 1. Save to DB
-      await new Promise<void>((resolve, reject) => {
-        createSignal.mutate({
-          data: {
-            pair: newSignal.pair,
-            direction: newSignal.direction,
-            entryPrice:  parseFloat(newSignal.entryPrice),
-            targetPrice: parseFloat(newSignal.targetPrice),
-            stopLoss:    parseFloat(newSignal.stopLoss),
-            confidence:  parseInt(newSignal.confidence, 10),
-            category:    newSignal.category,
-          },
-        }, {
-          onSuccess: () => resolve(),
-          onError: (e) => reject(e),
-        });
-      });
+      const signalData = {
+        pair, direction: form.direction, category,
+        entryPrice:  parseFloat(form.entryPrice),
+        targetPrice: parseFloat(form.targetPrice),
+        stopLoss:    parseFloat(form.stopLoss),
+        confidence:  parseInt(form.confidence, 10),
+        riskLevel:   form.riskLevel,
+      };
 
-      queryClient.invalidateQueries({ queryKey: getListTradingSignalsQueryKey() });
+      await createSignal.mutateAsync(signalData);
 
-      // 2. WhatsApp broadcast if connected
       if (waStatus.connected) {
-        const res = await fetch("/api/whatsapp/broadcast", {
+        const r = await fetch("/api/whatsapp/broadcast", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            signal: {
-              pair: newSignal.pair,
-              direction: newSignal.direction,
-              entryPrice:  parseFloat(newSignal.entryPrice),
-              targetPrice: parseFloat(newSignal.targetPrice),
-              stopLoss:    parseFloat(newSignal.stopLoss),
-              confidence:  parseInt(newSignal.confidence, 10),
-              reasoning:   aiReasoning,
-              category:    newSignal.category,
-            },
-          }),
+          body: JSON.stringify({ signal: { ...signalData, reasoning: aiReason } }),
         });
-        const result = await res.json();
-        toast({
-          title: `📲 Sent to ${result.sent}/${result.total} subscribers`,
-          description: "WhatsApp delivery complete",
-        });
+        const d = await r.json();
+        toast({ title: `📲 Broadcast complete`, description: `Sent to ${d.sent} subscribers via ${d.category} path` });
       } else {
-        toast({ title: "✅ Signal saved", description: "Connect WhatsApp to also broadcast to subscribers." });
+        toast({ title: "✅ Signal saved", description: "Connect WhatsApp to broadcast to subscribers." });
       }
 
-      setIsCreateOpen(false);
-      setNewSignal({ pair: "", direction: "BUY", entryPrice: "", targetPrice: "", stopLoss: "", confidence: "80", category: "crypto" });
-      setAiReasoning("");
-    } catch (err: any) {
-      toast({ title: "Broadcast failed", description: err.message, variant: "destructive" });
-    } finally {
-      setBroadcasting(false);
-    }
+      setIsOpen(false);
+      setForm({ direction: "BUY", entryPrice: "", targetPrice: "", stopLoss: "", confidence: "78", riskLevel: "Medium" });
+      setAiReason("");
+    } catch (e: any) {
+      toast({ title: "Broadcast failed", description: e.message, variant: "destructive" });
+    } finally { setBroadcast(false); }
   };
 
-  const handleToggleBot = () => {
-    if (!waStatus.connected) {
-      toast({ title: "WhatsApp not connected", description: "Connect WhatsApp first.", variant: "destructive" });
-      return;
-    }
-    setBotActive(v => {
-      const next = !v;
-      toast({ title: next ? "🟢 AI Bot Activated" : "🔴 AI Bot Paused", description: next ? `Running in ${aiMode} mode.` : "Bot paused." });
-      return next;
-    });
+  const handleResult = async (signal: Signal, result: "won" | "lost") => {
+    const rr = Math.abs(signal.targetPrice - signal.entryPrice) / Math.abs(signal.entryPrice - signal.stopLoss);
+    const pnl = result === "won" ? Math.round(rr * 100) / 10 : -1.0;
+    await updateSignal.mutateAsync({ id: signal.id, status: result, pnl });
+    toast({ title: result === "won" ? "✅ Signal marked Won!" : "❌ Signal marked Lost", description: `PNL: ${pnl > 0 ? "+" : ""}${pnl}%` });
   };
 
-  const handleScan = () => {
-    setIsScanning(true);
-    setTimeout(() => {
-      setIsScanning(false);
-      setLastScan(new Date().toLocaleTimeString());
-      toast({ title: "✅ Market Scan Complete", description: "6 pairs analyzed. 2 high-confidence setups found." });
-    }, 2500);
-  };
-
-  const isLoading = statsLoading || signalsLoading || subscribersLoading;
-
-  if (isLoading) return (
-    <PageTransition className="space-y-6 max-w-7xl mx-auto">
-      <Skeleton className="h-10 w-64" />
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">{[1,2,3,4].map(i => <Skeleton key={i} className="h-32" />)}</div>
-    </PageTransition>
-  );
+  const activeSignals = signals.filter(s => s.status === "active");
+  const closedSignals = signals.filter(s => ["won", "lost"].includes(s.status)).slice(0, 10);
 
   return (
-    <PageTransition className="space-y-6 max-w-7xl mx-auto">
-      {/* QR Code Dialog */}
-      <Dialog open={showQrDialog} onOpenChange={open => { setShowQrDialog(open); if (!open) stopPolling(); }}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <MessageCircle className="w-5 h-5 text-green-500" /> Connect WhatsApp
-            </DialogTitle>
-          </DialogHeader>
+    <PageTransition className="space-y-5 max-w-7xl mx-auto">
+
+      {/* QR Dialog */}
+      <Dialog open={showQr} onOpenChange={v => { setShowQr(v); if (!v) stopPoll(); }}>
+        <DialogContent className="max-w-xs text-center">
+          <DialogHeader><DialogTitle className="flex items-center justify-center gap-2"><MessageCircle className="w-5 h-5 text-green-500" /> Connect WhatsApp</DialogTitle></DialogHeader>
           <div className="flex flex-col items-center gap-4 py-4">
             {waStatus.connected ? (
-              <div className="flex flex-col items-center gap-3">
-                <CheckCircle2 className="w-16 h-16 text-green-500" />
-                <p className="font-semibold text-green-600">Connected!</p>
-                {waStatus.phone && <p className="text-sm text-muted-foreground">+{waStatus.phone}</p>}
-              </div>
+              <><CheckCircle2 className="w-16 h-16 text-green-500" /><p className="font-semibold text-green-600">Connected!</p></>
             ) : waStatus.qr ? (
-              <>
-                <img src={waStatus.qr} alt="WhatsApp QR Code" className="w-56 h-56 rounded-lg border" />
-                <p className="text-sm text-center text-muted-foreground">
-                  Open <strong>WhatsApp</strong> on your phone →<br />
-                  Tap <strong>⋮ → Linked Devices → Link a Device</strong><br />
-                  then scan this QR code
-                </p>
-              </>
+              <><img src={waStatus.qr} alt="QR" className="w-52 h-52 rounded-lg border" /><p className="text-xs text-muted-foreground">WhatsApp → ⋮ → Linked Devices → Link a Device</p></>
             ) : (
-              <div className="flex flex-col items-center gap-3 py-8">
-                <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
-                <p className="text-sm text-muted-foreground">Generating QR code…</p>
-              </div>
+              <><Loader2 className="w-10 h-10 text-green-500 animate-spin" /><p className="text-sm text-muted-foreground">Generating QR code…</p></>
             )}
           </div>
         </DialogContent>
       </Dialog>
 
       {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">AI Trading Bot</h1>
-          <p className="text-muted-foreground">CommandLine AI — WhatsApp signal engine & monetization.</p>
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+            <Zap className="w-6 h-6 text-green-500" /> CodeMind Signals
+          </h1>
+          <p className="text-sm text-muted-foreground">AI-powered WhatsApp trading bot</p>
         </div>
-        <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+        <Dialog open={isOpen} onOpenChange={setIsOpen}>
           <DialogTrigger asChild>
-            <Button className="gap-2 bg-indigo-600 hover:bg-indigo-700 text-white">
-              <Plus className="w-4 h-4" /> Broadcast Signal
+            <Button className="gap-2 bg-green-600 hover:bg-green-700 text-white">
+              <Plus className="w-4 h-4" /> New Signal
             </Button>
           </DialogTrigger>
           <DialogContent className="max-w-md">
-            <DialogHeader>
-              <DialogTitle>Broadcast Signal via WhatsApp</DialogTitle>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              {/* Market category */}
-              <div className="space-y-2">
-                <Label>Market</Label>
-                <div className="grid grid-cols-2 gap-2">
-                  {(["crypto", "forex"] as const).map(cat => (
-                    <button
-                      key={cat}
-                      onClick={() => setNewSignal(s => ({ ...s, category: cat, pair: "" }))}
-                      className={`flex items-center justify-center gap-2 p-2 rounded-lg border text-sm font-medium transition-all capitalize ${newSignal.category === cat ? "border-indigo-500 bg-indigo-500/10 text-indigo-500" : "border-border hover:border-muted-foreground/50"}`}
-                    >
-                      {cat === "crypto" ? <Bitcoin className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />}
-                      {cat === "crypto" ? "Crypto" : "Forex"}
+            <DialogHeader><DialogTitle>Generate & Broadcast Signal</DialogTitle></DialogHeader>
+            <div className="grid gap-4 py-2">
+
+              {/* Category */}
+              <div className="grid grid-cols-2 gap-2">
+                {(["crypto","forex"] as const).map(c => (
+                  <button key={c} onClick={() => { setCategory(c); setPair(c === "crypto" ? "BTCUSDT" : "EUR/USD"); }}
+                    className={`p-2 rounded-lg border text-sm font-medium flex items-center justify-center gap-2 ${category === c ? "border-green-500 bg-green-500/10 text-green-600" : "border-border"}`}>
+                    {c === "crypto" ? <Bitcoin className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />}
+                    {c === "crypto" ? "Crypto" : "Forex"}
+                  </button>
+                ))}
+              </div>
+
+              {/* Pair */}
+              <div className="space-y-1.5">
+                <Label>Pair</Label>
+                <Select value={pair} onValueChange={setPair}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {(category === "crypto" ? CRYPTO_PAIRS : FOREX_PAIRS).map(p => (
+                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* AI Mode + Generate */}
+              <div className="space-y-1.5">
+                <Label>AI Mode</Label>
+                <div className="flex gap-2">
+                  {AI_MODES.map(m => (
+                    <button key={m.value} onClick={() => setAiMode(m.value)}
+                      className={`flex-1 py-1.5 px-2 rounded-lg border text-xs font-medium transition-all ${aiMode === m.value ? m.color + " bg-current/10" : "border-border text-muted-foreground"}`}>
+                      {m.label}
                     </button>
                   ))}
                 </div>
               </div>
 
-              {/* AI Generate button */}
-              <div className="flex items-center gap-3">
-                <div className="flex-1 space-y-2">
-                  <Label>Asset Pair</Label>
-                  <Input
-                    placeholder={newSignal.category === "forex" ? "EUR/USD" : "BTC/USDT"}
-                    value={newSignal.pair}
-                    onChange={e => setNewSignal({ ...newSignal, pair: e.target.value.toUpperCase() })}
-                  />
-                </div>
-                <div className="pt-6">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="gap-2 border-indigo-500 text-indigo-500 hover:bg-indigo-500/10"
-                    onClick={handleGenerateAI}
-                    disabled={generatingAI}
-                  >
-                    {generatingAI ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                    {generatingAI ? "Analyzing…" : "AI Generate"}
-                  </Button>
-                </div>
-              </div>
+              <Button onClick={handleGenerate} disabled={generating} variant="outline" className="gap-2 border-green-500 text-green-600 hover:bg-green-500/10">
+                {generating ? <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing Binance data…</> : <><Sparkles className="w-4 h-4" /> AI Generate (Live Data)</>}
+              </Button>
 
-              {aiReasoning && (
-                <div className="p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-xs text-indigo-300">
-                  <span className="font-semibold">🤖 AI: </span>{aiReasoning}
+              {aiReason && (
+                <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-xs text-green-700 dark:text-green-400">
+                  🤖 {aiReason}
                 </div>
               )}
 
-              <div className="space-y-2">
-                <Label>Direction</Label>
-                <Select value={newSignal.direction} onValueChange={v => setNewSignal({ ...newSignal, direction: v })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="BUY"  className="text-green-600 font-bold">BUY (Long)</SelectItem>
-                    <SelectItem value="SELL" className="text-red-600 font-bold">SELL (Short)</SelectItem>
-                  </SelectContent>
-                </Select>
+              {/* Prices */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Direction</Label>
+                  <Select value={form.direction} onValueChange={v => setForm(f => ({...f, direction: v}))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="BUY"><span className="text-green-600 font-bold">🟢 BUY</span></SelectItem>
+                      <SelectItem value="SELL"><span className="text-red-500 font-bold">🔴 SELL</span></SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Risk Level</Label>
+                  <Select value={form.riskLevel} onValueChange={v => setForm(f => ({...f, riskLevel: v}))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Low">🟢 Low</SelectItem>
+                      <SelectItem value="Medium">🟡 Medium</SelectItem>
+                      <SelectItem value="High">🔴 High</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-
-              <div className="grid grid-cols-3 gap-3">
-                <div className="space-y-2"><Label>Entry</Label><Input type="number" step="any" value={newSignal.entryPrice}  onChange={e => setNewSignal({ ...newSignal, entryPrice: e.target.value })} /></div>
-                <div className="space-y-2"><Label>Target TP</Label><Input type="number" step="any" value={newSignal.targetPrice} onChange={e => setNewSignal({ ...newSignal, targetPrice: e.target.value })} /></div>
-                <div className="space-y-2"><Label>Stop Loss</Label><Input type="number" step="any" value={newSignal.stopLoss}    onChange={e => setNewSignal({ ...newSignal, stopLoss: e.target.value })} /></div>
+              <div className="grid grid-cols-3 gap-2">
+                {["entryPrice","targetPrice","stopLoss"].map(k => (
+                  <div key={k} className="space-y-1.5">
+                    <Label className="text-xs">{k === "entryPrice" ? "Entry" : k === "targetPrice" ? "Target TP" : "Stop Loss"}</Label>
+                    <Input type="number" step="any" value={(form as any)[k]} onChange={e => setForm(f => ({...f, [k]: e.target.value}))} className="text-sm" />
+                  </div>
+                ))}
               </div>
-              <div className="space-y-2">
-                <Label>AI Confidence (%)</Label>
-                <Input type="number" min="0" max="100" value={newSignal.confidence} onChange={e => setNewSignal({ ...newSignal, confidence: e.target.value })} />
+              <div className="space-y-1.5">
+                <Label>Confidence (%)</Label>
+                <Input type="number" min="0" max="100" value={form.confidence} onChange={e => setForm(f => ({...f, confidence: e.target.value}))} />
               </div>
 
               {waStatus.connected && (
                 <div className="flex items-center gap-2 p-2 rounded-lg bg-green-500/10 text-green-600 text-xs">
-                  <CheckCircle2 className="w-4 h-4" />
-                  WhatsApp connected — will broadcast to {stats?.activeSubscribers ?? 0} subscribers
+                  <CheckCircle2 className="w-4 h-4" /> WhatsApp connected — will broadcast as 6 conversational messages
                 </div>
               )}
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
-              <Button
-                onClick={handleCreate}
-                disabled={broadcasting || !newSignal.pair || !newSignal.entryPrice}
-                className="gap-2"
-              >
+              <Button variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
+              <Button onClick={handleBroadcast} disabled={broadcasting || !form.entryPrice} className="gap-2 bg-green-600 hover:bg-green-700 text-white">
                 {broadcasting ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</> : "📲 Broadcast"}
               </Button>
             </DialogFooter>
@@ -447,367 +355,202 @@ export default function Trading() {
       </div>
 
       {/* Stats */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Win Rate</CardTitle>
-            <Activity className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-green-500">{stats?.winRate ?? 0}%</div>
-            <p className="text-xs text-muted-foreground">Across {stats?.totalSignals ?? 0} total signals</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total PNL</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className={`text-2xl font-bold ${(stats?.totalPnl || 0) >= 0 ? "text-green-500" : "text-red-500"}`}>
-              {(stats?.totalPnl || 0) > 0 ? "+" : ""}{stats?.totalPnl ?? 0}%
+      {statsLoading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{[1,2,3,4].map(i=><Skeleton key={i} className="h-24"/>)}</div>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[
+            { label: "Win Rate", value: `${stats?.winRate ?? 0}%`, sub: `${stats?.closedSignals ?? 0} closed signals`, icon: Activity, color: "text-green-500" },
+            { label: "WA Subscribers", value: stats?.activeSubscribers ?? 0, sub: "Active subscribers", icon: Users, color: "text-blue-500" },
+            { label: "Monthly Revenue", value: `KES ${((stats?.monthlyRevenue ?? 0)).toLocaleString()}`, sub: "MRR from subscriptions", icon: DollarSign, color: "text-yellow-500" },
+            { label: "Total Signals", value: stats?.totalSignals ?? 0, sub: "All-time signals sent", icon: Zap, color: "text-indigo-500" },
+          ].map(s => (
+            <Card key={s.label}>
+              <CardContent className="pt-4 pb-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-muted-foreground">{s.label}</span>
+                  <s.icon className={`w-4 h-4 ${s.color}`} />
+                </div>
+                <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
+                <p className="text-xs text-muted-foreground mt-0.5">{s.sub}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* WhatsApp Card + Bot Controls */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className={`border-2 ${waStatus.connected ? "border-green-500/40 bg-green-500/5" : "border-dashed"}`}>
+          <CardContent className="pt-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`p-2.5 rounded-xl ${waStatus.connected ? "bg-green-500/10" : "bg-muted"}`}>
+                  <MessageCircle className={`w-5 h-5 ${waStatus.connected ? "text-green-500" : "text-muted-foreground"}`} />
+                </div>
+                <div>
+                  <div className="font-semibold text-sm flex items-center gap-1.5">
+                    WhatsApp Bot
+                    {waStatus.connected
+                      ? <span className="flex items-center gap-1 text-xs font-normal text-green-500"><span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse"/>Connected {waStatus.phone ? `(+${waStatus.phone})` : ""}</span>
+                      : <span className="text-xs font-normal text-muted-foreground">Not connected</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {waStatus.connected ? "Signals sent as 6 conversational messages" : "Connect to broadcast signals"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex gap-2 flex-shrink-0">
+                {waStatus.connected && (
+                  <Button size="sm" variant="outline" onClick={handleSendTest} disabled={testingWA} className="gap-1.5 text-xs text-indigo-500 border-indigo-500">
+                    {testingWA ? <Loader2 className="w-3 h-3 animate-spin" /> : <FlaskConical className="w-3 h-3" />} Test
+                  </Button>
+                )}
+                {waStatus.qr && !waStatus.connected && (
+                  <Button size="sm" variant="outline" onClick={() => setShowQr(true)} className="text-xs">Show QR</Button>
+                )}
+                <Button size="sm" onClick={handleConnectWA}
+                  className={waStatus.connected ? "" : "bg-green-600 hover:bg-green-700 text-white"}>
+                  {waStatus.connected ? <><WifiOff className="w-3.5 h-3.5 mr-1" />Disconnect</> : <><Wifi className="w-3.5 h-3.5 mr-1" />Connect</>}
+                </Button>
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">Cumulative performance</p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">WA Subscribers</CardTitle>
-            <Users className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats?.activeSubscribers ?? 0}</div>
-            <p className="text-xs text-muted-foreground">Receiving WhatsApp alerts</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Monthly MRR</CardTitle>
-            <DollarSign className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">${stats?.monthlyRevenue?.toLocaleString() ?? 0}</div>
-            <p className="text-xs text-muted-foreground">From paid subscriptions</p>
+
+        <Card className={`border-2 ${botActive ? "border-indigo-500/40 bg-indigo-500/5" : "border-border"}`}>
+          <CardContent className="pt-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className={`p-2.5 rounded-xl ${botActive ? "bg-indigo-500/10" : "bg-muted"}`}>
+                  <Bot className={`w-5 h-5 ${botActive ? "text-indigo-500" : "text-muted-foreground"}`} />
+                </div>
+                <div>
+                  <div className="font-semibold text-sm flex items-center gap-1.5">
+                    AI Bot
+                    {botActive && <span className="flex items-center gap-1 text-xs text-indigo-500"><span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"/>LIVE</span>}
+                  </div>
+                  <p className="text-xs text-muted-foreground capitalize">
+                    {botActive ? `Running — ${aiMode} mode` : "Paused — awaiting manual signals"}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex gap-1">
+                  {AI_MODES.map(m => (
+                    <button key={m.value} onClick={() => setAiMode(m.value)}
+                      className={`text-[10px] px-1.5 py-0.5 rounded border transition-all ${aiMode === m.value ? m.color : "border-border text-muted-foreground"}`}>
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                <Button size="sm"
+                  onClick={() => {
+                    if (!waStatus.connected) { toast({ title: "Connect WhatsApp first", variant: "destructive" }); return; }
+                    setBotActive(v => !v);
+                    toast({ title: botActive ? "🔴 Bot paused" : "🟢 Bot activated" });
+                  }}
+                  className={botActive ? "bg-red-500 hover:bg-red-600 text-white" : "bg-indigo-600 hover:bg-indigo-700 text-white"}>
+                  {botActive ? <><Pause className="w-3.5 h-3.5 mr-1"/>Pause</> : <><Play className="w-3.5 h-3.5 mr-1"/>Start</>}
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* WhatsApp Connection Card */}
-      <Card className={`border-2 transition-colors ${waStatus.connected ? "border-green-500/40 bg-green-500/5" : "border-dashed"}`}>
-        <CardContent className="pt-6">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className={`p-3 rounded-xl ${waStatus.connected ? "bg-green-500/10" : "bg-muted"}`}>
-                <MessageCircle className={`w-6 h-6 ${waStatus.connected ? "text-green-500" : "text-muted-foreground"}`} />
-              </div>
-              <div>
-                <div className="flex items-center gap-2 font-semibold">
-                  WhatsApp Bot
-                  {waStatus.connected
-                    ? <span className="flex items-center gap-1 text-xs font-normal text-green-500"><span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />Connected {waStatus.phone ? `(+${waStatus.phone})` : ""}</span>
-                    : waStatus.qr
-                    ? <span className="text-xs font-normal text-yellow-500">Scan QR to connect</span>
-                    : <span className="text-xs font-normal text-muted-foreground">Not connected</span>
-                  }
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {waStatus.connected
-                    ? "Bot is live. Trading signals delivered to subscribers instantly."
-                    : "Connect your WhatsApp to send real AI trading signals."}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              {waStatus.connected && (
-                <div className="hidden sm:flex items-center gap-4 text-xs text-muted-foreground border rounded-lg px-4 py-2">
-                  <span className="flex items-center gap-1"><CheckCircle2 className="w-3 h-3 text-green-500" /> Delivery: 99.2%</span>
-                  <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> Avg: 0.3s</span>
-                </div>
-              )}
-              {waStatus.qr && !waStatus.connected && (
-                <Button variant="outline" size="sm" onClick={() => setShowQrDialog(true)} className="gap-2 text-yellow-600 border-yellow-500">
-                  Show QR Code
-                </Button>
-              )}
-              {waStatus.connected && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-2 text-indigo-500 border-indigo-500 hover:bg-indigo-500/10"
-                  onClick={handleSendTest}
-                  disabled={testingWA}
-                >
-                  {testingWA ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                  {testingWA ? "Sending…" : "Send Test"}
-                </Button>
-              )}
-              <Button
-                onClick={handleConnectWA}
-                variant={waStatus.connected ? "outline" : "default"}
-                className={`gap-2 ${!waStatus.connected ? "bg-green-600 hover:bg-green-700 text-white" : ""}`}
-              >
-                {waStatus.connected
-                  ? <><WifiOff className="w-4 h-4" /> Disconnect</>
-                  : <><Wifi className="w-4 h-4" /> Connect WhatsApp</>
-                }
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* AI Bot Controls */}
-      <Card className={`border-2 transition-colors ${botActive ? "border-indigo-500/40 bg-indigo-500/5" : "border-border"}`}>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${botActive ? "bg-indigo-500/10" : "bg-muted"}`}>
-                <Bot className={`w-5 h-5 ${botActive ? "text-indigo-500" : "text-muted-foreground"}`} />
-              </div>
-              <div>
-                <CardTitle className="flex items-center gap-2">
-                  AI Bot Controls
-                  {botActive && <span className="flex items-center gap-1 text-xs font-normal text-indigo-500"><span className="w-2 h-2 rounded-full bg-indigo-500 animate-pulse" />LIVE</span>}
-                </CardTitle>
-                <CardDescription>
-                  {botActive ? `Running in ${AI_MODES.find(m => m.value === aiMode)?.label} mode — sending to ${stats?.activeSubscribers ?? 0} subscribers` : "Bot paused — no signals being generated"}
-                </CardDescription>
-              </div>
-            </div>
-            <Button onClick={handleToggleBot} className={`gap-2 ${botActive ? "bg-red-500 hover:bg-red-600 text-white" : "bg-indigo-600 hover:bg-indigo-700 text-white"}`}>
-              {botActive ? <><Pause className="w-4 h-4" /> Pause Bot</> : <><Play className="w-4 h-4" /> Start Bot</>}
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <div>
-            <Label className="text-sm font-medium mb-3 block">AI Trading Mode</Label>
-            <div className="grid grid-cols-3 gap-3">
-              {AI_MODES.map(mode => (
-                <button key={mode.value} onClick={() => setAiMode(mode.value)}
-                  className={`p-3 rounded-lg border text-left transition-all ${aiMode === mode.value ? "border-indigo-500 bg-indigo-500/10" : "border-border hover:border-muted-foreground/50"}`}>
-                  <div className={`font-semibold text-sm ${aiMode === mode.value ? mode.color : ""}`}>{mode.label}</div>
-                  <div className="text-xs text-muted-foreground mt-1">{mode.desc}</div>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
-            <div className="flex items-center gap-3">
-              <Zap className="w-5 h-5 text-yellow-500" />
-              <div>
-                <div className="font-medium text-sm">Auto-Broadcast via WhatsApp</div>
-                <div className="text-xs text-muted-foreground">AI automatically sends signals to all subscribers when a setup is detected</div>
-              </div>
-            </div>
-            <Switch checked={autoSignals} onCheckedChange={v => {
-              setAutoSignals(v);
-              toast({ title: v ? "Auto-Signal ON" : "Auto-Signal OFF", description: v ? "AI will auto-send WhatsApp alerts on detection." : "Signals require manual approval." });
-            }} />
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Risk Management + Market Scanner */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <div className="flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5 text-indigo-500" />
-              <CardTitle>AI Risk Management</CardTitle>
-            </div>
-            <CardDescription>Limits the AI enforces before sending any WhatsApp signal</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            <RangeSlider min={0.5} max={10} step={0.5} value={maxRisk} onChange={setMaxRisk}
-              label="Max Risk Per Trade" unit="%" description={`AI will not send a signal risking more than ${maxRisk}% of account`} />
-            <RangeSlider min={1} max={20} step={1} value={maxDailySignals} onChange={setMaxDailySignals}
-              label="Max Daily Signals" unit="" description={`Bot will stop after ${maxDailySignals} WhatsApp signals per day`} />
-            <RangeSlider min={1} max={5} step={0.5} value={tpMultiplier} onChange={setTpMultiplier}
-              label="TP:SL Ratio" unit="R" description={`Target must be ${tpMultiplier}x the stop loss distance`} />
-            <div className="space-y-3 pt-1">
-              <div className="flex items-center justify-between py-2 border-b">
-                <div>
-                  <div className="text-sm font-medium">Auto Stop-Loss</div>
-                  <div className="text-xs text-muted-foreground">AI sets SL automatically based on ATR</div>
-                </div>
-                <Switch checked={autoSl} onCheckedChange={setAutoSl} />
-              </div>
-              <div className="flex items-center justify-between py-2">
-                <div>
-                  <div className="text-sm font-medium">Compound Mode</div>
-                  <div className="text-xs text-muted-foreground">Increase position size after consecutive wins</div>
-                </div>
-                <Switch checked={compoundMode} onCheckedChange={setCompoundMode} />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <ScanLine className="w-5 h-5 text-indigo-500" />
-                <CardTitle>AI Market Scanner</CardTitle>
-              </div>
-              <Button variant="outline" size="sm" className="gap-2" onClick={handleScan} disabled={isScanning}>
-                {isScanning ? <><RefreshCw className="w-4 h-4 animate-spin" /> Scanning…</> : <><RefreshCw className="w-4 h-4" /> Scan Now</>}
-              </Button>
-            </div>
-            <CardDescription>{lastScan ? `Last scan: ${lastScan}` : "AI monitoring 12 pairs across Crypto & Forex"}</CardDescription>
-            {/* Category tabs */}
-            <div className="flex gap-2 mt-2">
-              {(["crypto", "forex"] as const).map(cat => (
-                <button
-                  key={cat}
-                  onClick={() => setScanCategory(cat)}
-                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border transition-all ${scanCategory === cat ? "bg-indigo-500/10 border-indigo-500 text-indigo-500" : "border-border text-muted-foreground hover:border-muted-foreground/50"}`}
-                >
-                  {cat === "crypto" ? <Bitcoin className="w-3 h-3" /> : <DollarSign className="w-3 h-3" />}
-                  {cat === "crypto" ? "Crypto" : "Forex"}
-                </button>
-              ))}
-            </div>
+      {/* Active Signals */}
+      {activeSignals.length > 0 && (
+        <Card className="border-green-500/20">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> Active Signals
+            </CardTitle>
+            <CardDescription>Mark as Won or Lost once the trade closes</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              {(scanCategory === "crypto" ? CRYPTO_PAIRS : FOREX_PAIRS).map(item => (
-                <div key={item.pair} className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/40 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <Brain className="w-4 h-4 text-muted-foreground" />
-                    <div>
-                      <div className="font-bold text-sm">{item.pair}</div>
-                      <div className="text-xs text-muted-foreground">{item.price}</div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <div className="text-right">
-                      <div className={`text-xs font-medium ${item.change.startsWith("+") ? "text-green-500" : "text-red-500"}`}>{item.change}</div>
-                      <div className="text-xs text-muted-foreground">AI: {item.strength}%</div>
-                    </div>
-                    <Badge variant="outline" className={
-                      item.sentiment === "BULLISH" ? "border-green-500 text-green-500 text-[10px]" :
-                      item.sentiment === "BEARISH" ? "border-red-500 text-red-500 text-[10px]" : "text-[10px]"
-                    }>{item.sentiment}</Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Performance Chart + Recent Signals */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-7">
-        <Card className="col-span-4 border-indigo-500/20">
-          <CardHeader>
-            <CardTitle>Performance History</CardTitle>
-            <CardDescription>AI signal win rate & cumulative PNL over time</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[280px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={performance ?? []}>
-                  <defs>
-                    <linearGradient id="colorPnl" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%"  stopColor="#6366f1" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0}   />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="hsl(var(--border))" />
-                  <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
-                  <YAxis yAxisId="left" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} tickFormatter={v => `${v}%`} />
-                  <RechartsTooltip contentStyle={{ backgroundColor: "hsl(var(--card))", borderColor: "hsl(var(--border))" }} />
-                  <Area yAxisId="left" type="monotone" dataKey="pnl" stroke="#6366f1" strokeWidth={2} fill="url(#colorPnl)" name="Cumulative PNL %" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card className="col-span-3">
-          <CardHeader>
-            <CardTitle>Recent Signals</CardTitle>
-            <CardDescription>Latest WhatsApp alerts sent to subscribers</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {signals?.slice(0, 6).map((signal: any) => (
-                <div key={signal.id} className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors">
-                  <div className="flex items-center gap-3">
-                    <div className={`p-2 rounded-md ${signal.direction === "BUY" ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"}`}>
-                      {signal.direction === "BUY" ? <TrendingUp className="w-4 h-4" /> : <TrendingDown className="w-4 h-4" />}
-                    </div>
-                    <div>
-                      <div className="font-bold text-sm flex items-center gap-2">
-                        {signal.pair}
-                        <Badge variant="outline" className="text-[10px] font-normal h-4 px-1">{signal.confidence}% AI</Badge>
+              {activeSignals.map(s => {
+                const rr = Math.abs(s.targetPrice - s.entryPrice) / Math.abs(s.entryPrice - s.stopLoss);
+                return (
+                  <div key={s.id} className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
+                    <div className="flex items-center gap-3">
+                      <div className={`p-1.5 rounded-md ${s.direction === "BUY" ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"}`}>
+                        {s.direction === "BUY" ? <TrendingUp className="w-4 h-4"/> : <TrendingDown className="w-4 h-4"/>}
                       </div>
-                      <div className="text-xs text-muted-foreground">Entry: {signal.entryPrice}</div>
+                      <div>
+                        <div className="font-bold text-sm">{s.pair} <span className="text-xs font-normal text-muted-foreground">({s.direction})</span></div>
+                        <div className="text-xs text-muted-foreground">
+                          Entry {fmtPrice(s.entryPrice, s.category)} → TP {fmtPrice(s.targetPrice, s.category)} | R:R {rr.toFixed(1)}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className={`text-[10px] ${riskColor(s.confidence)}`}>{s.confidence}%</Badge>
+                      <Button size="sm" variant="outline" className="h-7 px-2 text-green-500 border-green-500/40 hover:bg-green-500/10" onClick={() => handleResult(s, "won")}>
+                        <ThumbsUp className="w-3 h-3"/>
+                      </Button>
+                      <Button size="sm" variant="outline" className="h-7 px-2 text-red-500 border-red-500/40 hover:bg-red-500/10" onClick={() => handleResult(s, "lost")}>
+                        <ThumbsDown className="w-3 h-3"/>
+                      </Button>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <Badge variant={signal.status === "won" ? "default" : signal.status === "lost" ? "destructive" : "secondary"}
-                      className={signal.status === "won" ? "bg-green-500 hover:bg-green-600" : ""}>
-                      {signal.status.toUpperCase()}
-                    </Badge>
-                    {signal.pnl != null && (
-                      <div className={`text-xs mt-1 font-medium ${signal.pnl > 0 ? "text-green-500" : "text-red-500"}`}>
-                        {signal.pnl > 0 ? "+" : ""}{signal.pnl}%
-                      </div>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </CardContent>
         </Card>
-      </div>
+      )}
 
-      {/* Subscribers */}
+      {/* Signal History */}
       <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <MessageCircle className="w-5 h-5 text-green-500" />
-            <div>
-              <CardTitle>WhatsApp Subscribers</CardTitle>
-              <CardDescription>Users receiving AI trading signals via WhatsApp</CardDescription>
-            </div>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base flex items-center gap-2"><BarChart2 className="w-4 h-4"/>Signal History</CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => qc.invalidateQueries({ queryKey: ["signals"] })}><RefreshCw className="w-3.5 h-3.5"/></Button>
           </div>
         </CardHeader>
         <CardContent>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Name</TableHead>
-                <TableHead>WhatsApp Number</TableHead>
-                <TableHead>Plan</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Joined</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {subscribers?.map((sub: any) => (
-                <TableRow key={sub.id}>
-                  <TableCell className="font-medium">{sub.name}</TableCell>
-                  <TableCell className="font-mono text-xs">{sub.phone}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={sub.plan === "pro" ? "border-indigo-500 text-indigo-500" : ""}>
-                      {sub.plan.toUpperCase()}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <div className={`w-2 h-2 rounded-full ${sub.status === "active" ? "bg-green-500" : "bg-red-500"}`} />
-                      <span className="capitalize text-sm">{sub.status}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-muted-foreground text-sm">{new Date(sub.joinedAt).toLocaleDateString()}</TableCell>
+          {sigsLoading ? <Skeleton className="h-40 w-full"/> : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Pair</TableHead>
+                  <TableHead>Direction</TableHead>
+                  <TableHead>Entry</TableHead>
+                  <TableHead>TP</TableHead>
+                  <TableHead>SL</TableHead>
+                  <TableHead>Conf.</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>PNL</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {closedSignals.length === 0 && activeSignals.length === 0 ? (
+                  <TableRow><TableCell colSpan={8} className="h-24 text-center text-muted-foreground">No signals yet. Generate your first signal above.</TableCell></TableRow>
+                ) : (
+                  [...activeSignals, ...closedSignals].slice(0, 15).map(s => (
+                    <TableRow key={s.id}>
+                      <TableCell className="font-bold text-sm">{s.pair}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={s.direction === "BUY" ? "text-green-500 border-green-500/40" : "text-red-500 border-red-500/40"}>
+                          {s.direction === "BUY" ? "🟢" : "🔴"} {s.direction}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm font-mono">{fmtPrice(s.entryPrice, s.category)}</TableCell>
+                      <TableCell className="text-sm font-mono text-green-500">{fmtPrice(s.targetPrice, s.category)}</TableCell>
+                      <TableCell className="text-sm font-mono text-red-500">{fmtPrice(s.stopLoss, s.category)}</TableCell>
+                      <TableCell><span className={`text-sm font-bold ${riskColor(s.confidence)}`}>{s.confidence}%</span></TableCell>
+                      <TableCell>{statusBadge(s.status)}</TableCell>
+                      <TableCell>
+                        {s.pnl != null ? <span className={`text-sm font-bold ${s.pnl >= 0 ? "text-green-500" : "text-red-500"}`}>{s.pnl > 0 ? "+" : ""}{s.pnl}%</span> : <span className="text-muted-foreground text-xs">—</span>}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          )}
         </CardContent>
       </Card>
     </PageTransition>

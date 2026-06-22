@@ -1,8 +1,8 @@
 import React from "react";
 import { Link, useLocation } from "wouter";
-import { 
-  Sidebar, 
-  SidebarContent, 
+import {
+  Sidebar,
+  SidebarContent,
   SidebarHeader,
   SidebarGroup,
   SidebarGroupContent,
@@ -15,26 +15,33 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
-import { Moon, Sun, Home, Bot, Cloud, TrendingUp, User, Settings, LayoutDashboard } from "lucide-react";
+import { Moon, Sun, Zap, BarChart2, Users, Brain, Settings, LayoutDashboard } from "lucide-react";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const { theme, setTheme } = useTheme();
 
   const navItems = [
-    { href: "/", label: "Trading Signals", icon: TrendingUp },
-    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/ai-analyst", label: "AI Analyst", icon: Bot },
-    { href: "/deployments", label: "Bot Deployments", icon: Cloud },
-    { href: "/profile", label: "Profile", icon: User },
-    { href: "/settings", label: "Settings", icon: Settings },
+    { href: "/",            label: "Signals",     icon: Zap },
+    { href: "/dashboard",   label: "Analytics",   icon: BarChart2 },
+    { href: "/deployments", label: "Subscribers", icon: Users },
+    { href: "/ai-analyst",  label: "AI Analyst",  icon: Brain },
+    { href: "/settings",    label: "Settings",    icon: Settings },
   ];
 
   return (
     <SidebarProvider>
       <Sidebar>
-        <SidebarHeader className="h-14 border-b flex items-center px-4">
-          <span className="font-bold text-lg">CommandLine AI</span>
+        <SidebarHeader className="h-14 border-b flex items-center px-4 gap-2">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-green-500 flex items-center justify-center flex-shrink-0">
+              <Zap className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <div className="font-bold text-sm leading-tight">CodeMind Signals</div>
+              <div className="text-[10px] text-muted-foreground leading-tight">AI Trading Bot</div>
+            </div>
+          </div>
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
@@ -69,7 +76,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             <span className="sr-only">Toggle theme</span>
           </Button>
         </header>
-        <main className="p-6">
+        <main className="p-4 md:p-6">
           {children}
         </main>
       </SidebarInset>
