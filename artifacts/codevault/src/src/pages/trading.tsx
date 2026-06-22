@@ -4,17 +4,14 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
   Zap, TrendingUp, TrendingDown, Users, DollarSign, Activity,
-  MessageCircle, Wifi, WifiOff, Sparkles, Loader2, Plus, CheckCircle2,
-  Clock, Bitcoin, RefreshCw, Bot, Play, Pause, FlaskConical,
+  MessageCircle, Wifi, WifiOff, Sparkles, Loader2, CheckCircle2,
+  Bitcoin, RefreshCw, Bot, Play, Pause, FlaskConical,
   ThumbsUp, ThumbsDown, BarChart2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -109,14 +106,12 @@ export default function Trading() {
   });
   const botActive = botStatus?.active ?? false;
 
-  // Signal form
-  const [isOpen, setIsOpen]         = useState(false);
+  // AI panel
   const [category, setCategory]     = useState<"crypto"|"forex">("crypto");
   const [pair, setPair]             = useState("BTCUSDT");
-  const [form, setForm]             = useState({ direction: "BUY", entryPrice: "", targetPrice: "", stopLoss: "", confidence: "78", riskLevel: "Medium" });
   const [aiReason, setAiReason]     = useState("");
   const [generating, setGenerating] = useState(false);
-  const [broadcasting, setBroadcast] = useState(false);
+  const [lastSignal, setLastSignal] = useState<any>(null);
 
   // WA polling
   const fetchWA = async () => {
@@ -155,9 +150,9 @@ export default function Trading() {
     } finally { setTestingWA(false); }
   };
 
-  // AI generate
+  // AI generate → auto-save → broadcast
   const handleGenerate = async () => {
-    setGenerating(true); setAiReason("");
+    setGenerating(true); setAiReason(""); setLastSignal(null);
     try {
       const r = await fetch("/api/trading/signals/generate", {
         method: "POST",
@@ -166,55 +161,35 @@ export default function Trading() {
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error);
-      setForm({
-        direction: d.direction,
-        entryPrice:  String(d.entryPrice),
-        targetPrice: String(d.targetPrice),
-        stopLoss:    String(d.stopLoss),
-        confidence:  String(d.confidence),
-        riskLevel:   d.riskLevel ?? "Medium",
-      });
       setAiReason(d.reasoning ?? "");
-      toast({ title: `✨ ${d.direction} signal — ${d.confidence}% confidence`, description: `Live Binance data used for ${pair}` });
+
+      const signalData = {
+        pair, category,
+        direction:   d.direction,
+        entryPrice:  d.entryPrice,
+        targetPrice: d.targetPrice,
+        stopLoss:    d.stopLoss,
+        confidence:  d.confidence,
+        riskLevel:   d.riskLevel ?? "Medium",
+      };
+
+      const saved = await createSignal.mutateAsync(signalData);
+      setLastSignal(saved);
+
+      if (waStatus.connected) {
+        const br = await fetch("/api/whatsapp/broadcast", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ signal: { ...signalData, reasoning: d.reasoning } }),
+        });
+        const bd = await br.json();
+        toast({ title: `📲 Signal sent to ${bd.sent ?? 0} subscribers`, description: `${d.direction} ${pair} @ ${d.entryPrice} — ${d.confidence}% confidence` });
+      } else {
+        toast({ title: `✅ ${d.direction} signal added`, description: `${pair} @ ${d.entryPrice} — ${d.confidence}% confidence` });
+      }
     } catch (e: any) {
       toast({ title: "AI failed", description: e.message, variant: "destructive" });
     } finally { setGenerating(false); }
-  };
-
-  // Broadcast
-  const handleBroadcast = async () => {
-    if (!form.entryPrice) return;
-    setBroadcast(true);
-    try {
-      const signalData = {
-        pair, direction: form.direction, category,
-        entryPrice:  parseFloat(form.entryPrice),
-        targetPrice: parseFloat(form.targetPrice),
-        stopLoss:    parseFloat(form.stopLoss),
-        confidence:  parseInt(form.confidence, 10),
-        riskLevel:   form.riskLevel,
-      };
-
-      await createSignal.mutateAsync(signalData);
-
-      if (waStatus.connected) {
-        const r = await fetch("/api/whatsapp/broadcast", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ signal: { ...signalData, reasoning: aiReason } }),
-        });
-        const d = await r.json();
-        toast({ title: `📲 Broadcast complete`, description: `Sent to ${d.sent} subscribers via ${d.category} path` });
-      } else {
-        toast({ title: "✅ Signal saved", description: "Connect WhatsApp to broadcast to subscribers." });
-      }
-
-      setIsOpen(false);
-      setForm({ direction: "BUY", entryPrice: "", targetPrice: "", stopLoss: "", confidence: "78", riskLevel: "Medium" });
-      setAiReason("");
-    } catch (e: any) {
-      toast({ title: "Broadcast failed", description: e.message, variant: "destructive" });
-    } finally { setBroadcast(false); }
   };
 
   const handleResult = async (signal: Signal, result: "won" | "lost") => {
@@ -254,115 +229,73 @@ export default function Trading() {
           </h1>
           <p className="text-sm text-muted-foreground">AI-powered WhatsApp trading bot</p>
         </div>
-        <Dialog open={isOpen} onOpenChange={setIsOpen}>
-          <DialogTrigger asChild>
-            <Button className="gap-2 bg-green-600 hover:bg-green-700 text-white">
-              <Plus className="w-4 h-4" /> New Signal
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-md">
-            <DialogHeader><DialogTitle>Generate & Broadcast Signal</DialogTitle></DialogHeader>
-            <div className="grid gap-4 py-2">
-
-              {/* Category */}
-              <div className="grid grid-cols-2 gap-2">
-                {(["crypto","forex"] as const).map(c => (
-                  <button key={c} onClick={() => { setCategory(c); setPair(c === "crypto" ? "BTCUSDT" : "EUR/USD"); }}
-                    className={`p-2 rounded-lg border text-sm font-medium flex items-center justify-center gap-2 ${category === c ? "border-green-500 bg-green-500/10 text-green-600" : "border-border"}`}>
-                    {c === "crypto" ? <Bitcoin className="w-4 h-4" /> : <DollarSign className="w-4 h-4" />}
-                    {c === "crypto" ? "Crypto" : "Forex"}
-                  </button>
-                ))}
-              </div>
-
-              {/* Pair */}
-              <div className="space-y-1.5">
-                <Label>Pair</Label>
-                <Select value={pair} onValueChange={setPair}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {(category === "crypto" ? CRYPTO_PAIRS : FOREX_PAIRS).map(p => (
-                      <SelectItem key={p} value={p}>{p}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* AI Mode + Generate */}
-              <div className="space-y-1.5">
-                <Label>AI Mode</Label>
-                <div className="flex gap-2">
-                  {AI_MODES.map(m => (
-                    <button key={m.value} onClick={() => setAiMode(m.value)}
-                      className={`flex-1 py-1.5 px-2 rounded-lg border text-xs font-medium transition-all ${aiMode === m.value ? m.color + " bg-current/10" : "border-border text-muted-foreground"}`}>
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <Button onClick={handleGenerate} disabled={generating} variant="outline" className="gap-2 border-green-500 text-green-600 hover:bg-green-500/10">
-                {generating ? <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing Binance data…</> : <><Sparkles className="w-4 h-4" /> AI Generate (Live Data)</>}
-              </Button>
-
-              {aiReason && (
-                <div className="p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-xs text-green-700 dark:text-green-400">
-                  🤖 {aiReason}
-                </div>
-              )}
-
-              {/* Prices */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Direction</Label>
-                  <Select value={form.direction} onValueChange={v => setForm(f => ({...f, direction: v}))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="BUY"><span className="text-green-600 font-bold">🟢 BUY</span></SelectItem>
-                      <SelectItem value="SELL"><span className="text-red-500 font-bold">🔴 SELL</span></SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Risk Level</Label>
-                  <Select value={form.riskLevel} onValueChange={v => setForm(f => ({...f, riskLevel: v}))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="Low">🟢 Low</SelectItem>
-                      <SelectItem value="Medium">🟡 Medium</SelectItem>
-                      <SelectItem value="High">🔴 High</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
-                {["entryPrice","targetPrice","stopLoss"].map(k => (
-                  <div key={k} className="space-y-1.5">
-                    <Label className="text-xs">{k === "entryPrice" ? "Entry" : k === "targetPrice" ? "Target TP" : "Stop Loss"}</Label>
-                    <Input type="number" step="any" value={(form as any)[k]} onChange={e => setForm(f => ({...f, [k]: e.target.value}))} className="text-sm" />
-                  </div>
-                ))}
-              </div>
-              <div className="space-y-1.5">
-                <Label>Confidence (%)</Label>
-                <Input type="number" min="0" max="100" value={form.confidence} onChange={e => setForm(f => ({...f, confidence: e.target.value}))} />
-              </div>
-
-              {waStatus.connected && (
-                <div className="flex items-center gap-2 p-2 rounded-lg bg-green-500/10 text-green-600 text-xs">
-                  <CheckCircle2 className="w-4 h-4" /> WhatsApp connected — will broadcast as 6 conversational messages
-                </div>
-              )}
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setIsOpen(false)}>Cancel</Button>
-              <Button onClick={handleBroadcast} disabled={broadcasting || !form.entryPrice} className="gap-2 bg-green-600 hover:bg-green-700 text-white">
-                {broadcasting ? <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</> : "📲 Broadcast"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
       </div>
+
+      {/* AI Generate Panel */}
+      <Card className="border-green-500/30 bg-green-500/5">
+        <CardContent className="pt-4 pb-4">
+          <div className="flex flex-wrap items-end gap-3">
+            {/* Category */}
+            <div className="flex gap-1.5">
+              {(["crypto","forex"] as const).map(c => (
+                <button key={c} onClick={() => { setCategory(c); setPair(c === "crypto" ? "BTCUSDT" : "EUR/USD"); }}
+                  className={`px-3 py-1.5 rounded-lg border text-xs font-medium flex items-center gap-1.5 transition-all ${category === c ? "border-green-500 bg-green-500/15 text-green-600 dark:text-green-400" : "border-border text-muted-foreground hover:border-green-500/50"}`}>
+                  {c === "crypto" ? <Bitcoin className="w-3.5 h-3.5" /> : <DollarSign className="w-3.5 h-3.5" />}
+                  {c === "crypto" ? "Crypto" : "Forex"}
+                </button>
+              ))}
+            </div>
+
+            {/* Pair */}
+            <div className="w-36">
+              <Select value={pair} onValueChange={setPair}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {(category === "crypto" ? CRYPTO_PAIRS : FOREX_PAIRS).map(p => (
+                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* AI Mode */}
+            <div className="flex gap-1">
+              {AI_MODES.map(m => (
+                <button key={m.value} onClick={() => setAiMode(m.value)}
+                  className={`py-1 px-2.5 rounded-lg border text-[11px] font-medium transition-all ${aiMode === m.value ? m.color + " bg-current/10" : "border-border text-muted-foreground hover:border-green-500/40"}`}>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Generate button */}
+            <Button onClick={handleGenerate} disabled={generating}
+              className="gap-2 bg-green-600 hover:bg-green-700 text-white ml-auto">
+              {generating
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing…</>
+                : <><Sparkles className="w-4 h-4" /> AI Send Signal</>}
+            </Button>
+          </div>
+
+          {/* Result / reasoning */}
+          {generating && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
+              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Fetching live Binance data and analysing {pair}…
+            </div>
+          )}
+          {aiReason && !generating && (
+            <div className="mt-3 p-2.5 rounded-lg bg-green-500/10 border border-green-500/20 text-xs text-green-700 dark:text-green-400 flex items-start gap-2">
+              <Sparkles className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+              <span>{aiReason}</span>
+            </div>
+          )}
+          {waStatus.connected && (
+            <p className="mt-2 text-[11px] text-green-600/70 dark:text-green-500/60 flex items-center gap-1">
+              <CheckCircle2 className="w-3 h-3" /> WhatsApp connected — signal will be broadcast to subscribers automatically
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Stats */}
       {statsLoading ? (
