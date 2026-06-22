@@ -75,7 +75,8 @@ function fmtPrice(price: number, category?: string): string {
     : price.toFixed(6);
 }
 
-// ── Build the 6 conversational messages ──────────────────────────────────────
+// ── Build the 6 terminal-style messages ──────────────────────────────────────
+// WhatsApp supports code blocks via triple backticks — gives monospace terminal look
 export function buildSignalMessages(signal: {
   pair: string;
   direction: string;
@@ -87,38 +88,107 @@ export function buildSignalMessages(signal: {
   category?: string;
   reasoning?: string;
 }): string[] {
-  const dirEmoji = signal.direction === "BUY" ? "🟢" : "🔴";
-  const cat = signal.category ?? "crypto";
+  const cat      = signal.category ?? "crypto";
+  const dir      = signal.direction;
+  const dirTag   = dir === "BUY" ? "BUY  🟢" : "SELL 🔴";
+  const dirArrow = dir === "BUY" ? "▲" : "▼";
 
   // Entry range ±0.15%
-  const spread = signal.entryPrice * 0.0015;
+  const spread    = signal.entryPrice * 0.0015;
   const entryLow  = fmtPrice(signal.entryPrice - spread, cat);
   const entryHigh = fmtPrice(signal.entryPrice + spread, cat);
 
-  const risk = signal.riskLevel ?? (
-    signal.confidence >= 80 ? "Low" : signal.confidence >= 65 ? "Medium" : "High"
-  );
-
+  const risk      = signal.riskLevel ?? (signal.confidence >= 80 ? "Low" : signal.confidence >= 65 ? "Medium" : "High");
   const riskEmoji = risk === "Low" ? "🟢" : risk === "Medium" ? "🟡" : "🔴";
 
+  // R:R ratio
+  const rr = Math.abs(signal.targetPrice - signal.entryPrice) /
+             Math.abs(signal.entryPrice  - signal.stopLoss);
+  const rrStr = rr.toFixed(1) + "x";
+
+  // Confidence bar (10 chars)
+  const bars    = Math.round(signal.confidence / 10);
+  const confBar = "█".repeat(bars) + "░".repeat(10 - bars);
+
+  // Pad helper for alignment
+  const pad = (s: string, n: number) => s.padEnd(n, " ");
+
   return [
-    // 1 - Pair + Direction
-    `${pick(SIGNAL_INTROS)}\n\n*${signal.pair}*\n\n*${signal.direction} ${dirEmoji}*`,
+    // ── MSG 1: Signal header ─────────────────────────────────────────────────
+    `\`\`\`
+╔══════════════════════════╗
+║   CODEMIND  SIGNALS  ⚡  ║
+║   [ NEW SIGNAL ALERT ]   ║
+╚══════════════════════════╝
 
-    // 2 - Entry
-    `${pick(ENTRY_PHRASES)}\n\n*Entry:* ${entryLow} - ${entryHigh}`,
+> PAIR......: ${pad(signal.pair, 12)}
+> ACTION....: ${dirTag}
+> MARKET....: ${cat.toUpperCase()}
+> STATUS....: ✅ SIGNAL CONFIRMED
+\`\`\`
+${pick(SIGNAL_INTROS)} — *${signal.pair}* ${dirArrow}`,
 
-    // 3 - Take Profit
-    `${pick(TP_PHRASES)}\n\n*Take Profit:* ${fmtPrice(signal.targetPrice, cat)}`,
+    // ── MSG 2: Entry zone ────────────────────────────────────────────────────
+    `\`\`\`
+[ ENTRY ZONE DETECTED ]
+────────────────────────
 
-    // 4 - Stop Loss
-    `${pick(SL_PHRASES)}\n\n*Stop Loss:* ${fmtPrice(signal.stopLoss, cat)}`,
+${pick(["SCANNING..... DONE ✓", "ANALYSIS.... DONE ✓", "PROCESSING.. DONE ✓"])}
+ZONE TYPE...: ${dir === "BUY" ? "SUPPORT ZONE" : "RESISTANCE ZONE"}
 
-    // 5 - Confidence
-    `${pick(CONF_PHRASES)}\n\n*Confidence:* ${signal.confidence}%`,
+ENTRY LOW...: ${pad(entryLow, 14)}
+ENTRY HIGH..: ${pad(entryHigh, 14)}
+\`\`\`
+📍 ${pick(ENTRY_PHRASES.map(p => p.replace("📍 ", "")))}`,
 
-    // 6 - Risk + Close
-    `${pick(RISK_PHRASES)}\n\n*Risk Level:* ${riskEmoji} ${risk}\n\n${pick(CLOSE_PHRASES)}`,
+    // ── MSG 3: Take profit ───────────────────────────────────────────────────
+    `\`\`\`
+[ TARGET LOCKED 🎯 ]
+────────────────────────
+
+TAKE PROFIT.: ${pad(fmtPrice(signal.targetPrice, cat), 14)}
+R:R RATIO...: ${pad(rrStr, 14)}
+DIRECTION...: ${dir === "BUY" ? "LONG  ↑" : "SHORT ↓"}
+\`\`\`
+🎯 ${pick(TP_PHRASES.map(p => p.replace("🎯 ", "")))}`,
+
+    // ── MSG 4: Stop loss ─────────────────────────────────────────────────────
+    `\`\`\`
+[ RISK PROTOCOL 🛡️ ]
+────────────────────────
+
+STOP LOSS...: ${pad(fmtPrice(signal.stopLoss, cat), 14)}
+MAX DRAWDOWN: ${Math.abs(((signal.stopLoss - signal.entryPrice) / signal.entryPrice) * 100).toFixed(2)}%
+PROTOCOL....: HARD STOP
+\`\`\`
+🛑 ${pick(SL_PHRASES.map(p => p.replace("🛑 ", "")))}`,
+
+    // ── MSG 5: AI analysis ───────────────────────────────────────────────────
+    `\`\`\`
+[ AI ANALYSIS 🤖 ]
+────────────────────────
+
+CONFIDENCE..: [${confBar}] ${signal.confidence}%
+MODEL.......: GEMINI 2.5 FLASH
+DATA SRC....: BINANCE LIVE
+SIGNAL STR..: ${signal.confidence >= 80 ? "STRONG" : signal.confidence >= 65 ? "MODERATE" : "SPECULATIVE"}
+\`\`\`
+📊 ${pick(CONF_PHRASES.map(p => p.replace("📊 ", "")))} *${signal.confidence}% confidence*`,
+
+    // ── MSG 6: Risk + close ──────────────────────────────────────────────────
+    `\`\`\`
+[ RISK ASSESSMENT ⚠️ ]
+────────────────────────
+
+RISK LEVEL..: ${riskEmoji} ${risk.toUpperCase()}
+RISK/REWARD.: ${rrStr}
+EXECUTE.....: ${signal.confidence >= 70 ? "✅ YES — GO FOR IT" : "⚠️  OPTIONAL"}
+
+> BOT ID: CODEMIND-${Date.now().toString(36).toUpperCase().slice(-6)}
+\`\`\`
+${riskEmoji} ${pick(RISK_PHRASES.map(p => p.replace("⚠️ ", "").replace("🧠 ", "")))} — *Risk: ${risk}*
+
+${pick(CLOSE_PHRASES)}`,
   ];
 }
 
