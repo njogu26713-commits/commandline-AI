@@ -69,10 +69,7 @@ export default defineConfig({
     headers: {
       "Cache-Control": "no-store",
     },
-    hmr: {
-      clientPort: 443,
-      protocol: "wss",
-    },
+    hmr: false,
   },
   preview: {
     port,
