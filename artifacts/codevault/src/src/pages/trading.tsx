@@ -80,8 +80,7 @@ function statusBadge(status: string) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function Trading() {
   const { data: stats, isLoading: statsLoading } = useStats();
-  const { data: signals = [], isLoading: sigsLoading } = useSignals();
-  const createSignal = useCreateSignal();
+  const { data: signals = [], isLoading: sigsLoading, refetch: refetchSignals } = useSignals();
   const updateSignal = useUpdateSignal();
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -165,7 +164,7 @@ export default function Trading() {
     try { return JSON.parse(text); } catch { throw new Error("Invalid server response"); }
   };
 
-  // AI generate → auto-save → broadcast
+  // AI generate → server auto-saves to DB + broadcasts to WhatsApp subscribers
   const handleGenerate = async () => {
     setGenerating(true); setAiReason(""); setLastSignal(null);
     try {
@@ -177,33 +176,22 @@ export default function Trading() {
       const d = await safeJson(r);
       if (!r.ok) throw new Error(d.error ?? "AI generation failed");
       setAiReason(d.reasoning ?? "");
+      setLastSignal({ id: d.id, pair, category, direction: d.direction, entryPrice: d.entryPrice, targetPrice: d.targetPrice, stopLoss: d.stopLoss, confidence: d.confidence, status: "active", createdAt: new Date().toISOString() });
 
-      const signalData = {
-        pair, category,
-        direction:   d.direction,
-        entryPrice:  d.entryPrice,
-        targetPrice: d.targetPrice,
-        stopLoss:    d.stopLoss,
-        confidence:  d.confidence,
-        riskLevel:   d.riskLevel ?? "Medium",
-      };
-
-      const saved = await createSignal.mutateAsync(signalData);
-      setLastSignal(saved);
-
-      if (waStatus.connected) {
-        const br = await fetch("/api/whatsapp/broadcast", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ signal: { ...signalData, reasoning: d.reasoning } }),
-        });
-        const bd = await safeJson(br);
-        toast({ title: `📲 Signal sent to ${bd.sent ?? 0} subscribers`, description: `${d.direction} ${pair} @ ${d.entryPrice} — ${d.confidence}% confidence` });
+      const bc = d.broadcast;
+      if (bc && !bc.skipped) {
+        if (bc.sent > 0) {
+          toast({ title: `📲 Signal sent to ${bc.sent} subscriber${bc.sent !== 1 ? "s" : ""}`, description: `${d.direction} ${pair} @ ${d.entryPrice.toFixed(2)} — ${d.confidence}% confidence` });
+        } else {
+          toast({ title: `✅ ${d.direction} signal saved`, description: `WhatsApp connected but no active subscribers yet` });
+        }
       } else {
-        toast({ title: `✅ ${d.direction} signal added`, description: `${pair} @ ${d.entryPrice} — ${d.confidence}% confidence` });
+        toast({ title: `✅ ${d.direction} signal saved`, description: `${pair} @ ${d.entryPrice.toFixed(2)} — connect WhatsApp to auto-send to subscribers` });
       }
+
+      refetchSignals?.();
     } catch (e: any) {
-      toast({ title: "AI failed", description: e.message, variant: "destructive" });
+      toast({ title: "Signal generation failed", description: e.message, variant: "destructive" });
     } finally { setGenerating(false); }
   };
 

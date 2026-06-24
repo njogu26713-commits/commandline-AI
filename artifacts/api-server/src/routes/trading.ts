@@ -3,6 +3,7 @@ import { db } from "@workspace/db";
 import { tradingSignalsTable, subscribersTable, tradingPerformanceTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { getMarketData, getKlines, buildMarketContext } from "../services/binance.js";
+import { getWAStatus, broadcastSignal } from "../services/whatsapp.js";
 
 const router = Router();
 
@@ -149,7 +150,45 @@ router.get("/trading/market/:pair", async (req, res) => {
   }
 });
 
-// ── AI Signal Generation (Gemini 2.5 Flash + Binance data) ───────────────────
+// ── Helper: save signal to DB then auto-broadcast via WhatsApp ────────────────
+async function saveAndBroadcast(signal: {
+  pair: string; category: string; direction: string;
+  entryPrice: number; targetPrice: number; stopLoss: number;
+  confidence: number; riskLevel: string; reasoning: string; source: string;
+}) {
+  const [saved] = await db.insert(tradingSignalsTable).values({
+    pair:        signal.pair,
+    direction:   signal.direction,
+    entryPrice:  signal.entryPrice,
+    targetPrice: signal.targetPrice,
+    stopLoss:    signal.stopLoss,
+    confidence:  signal.confidence,
+    category:    signal.category,
+    status:      "active",
+  }).returning();
+
+  let broadcast: { sent: number; failed: number; skipped: boolean } = { sent: 0, failed: 0, skipped: true };
+
+  const waStatus = getWAStatus();
+  if (waStatus.connected) {
+    const allSubs = await db.select().from(subscribersTable).where(eq(subscribersTable.status, "active"));
+    const targets = allSubs.filter(s => {
+      const t = s.signalType ?? "both";
+      return t === "both" || t === signal.category;
+    });
+
+    if (targets.length > 0) {
+      const result = await broadcastSignal({ ...signal, id: saved.id } as any, targets as any);
+      broadcast = { sent: result.sent ?? 0, failed: result.failed ?? 0, skipped: false };
+    } else {
+      broadcast = { sent: 0, failed: 0, skipped: false };
+    }
+  }
+
+  return { saved, broadcast };
+}
+
+// ── AI Signal Generation ──────────────────────────────────────────────────────
 router.post("/trading/signals/generate", async (req, res) => {
   const { pair = "BTCUSDT", mode = "balanced", category = "crypto" } = req.body;
   const confidenceMin = mode === "conservative" ? 82 : mode === "balanced" ? 68 : 55;
@@ -165,7 +204,6 @@ router.post("/trading/signals/generate", async (req, res) => {
     ticker       = analysis.ticker;
     ta           = analysis.ta;
     currentPrice = ticker.price;
-    const { buildMarketContext, getKlines } = await import("../services/binance.js");
     const klines = category === "crypto" ? await getKlines(pair, "1h", 20).catch(() => []) : [];
     marketContext = buildMarketContext(ticker, klines);
   } catch (e: any) {
@@ -194,9 +232,19 @@ Respond ONLY with valid JSON:
       const text   = result.response.text().trim();
       const match  = text.match(/\{[\s\S]*?\}/);
       if (match) {
-        const signal = JSON.parse(match[0]);
-        if (signal.direction && signal.entryPrice && signal.targetPrice && signal.stopLoss) {
-          return res.json({ ...signal, pair, category, currentPrice, source: "ai" });
+        const sig = JSON.parse(match[0]);
+        if (sig.direction && sig.entryPrice && sig.targetPrice && sig.stopLoss) {
+          const { saved, broadcast } = await saveAndBroadcast({
+            pair, category, source: "ai",
+            direction:   sig.direction,
+            entryPrice:  sig.entryPrice,
+            targetPrice: sig.targetPrice,
+            stopLoss:    sig.stopLoss,
+            confidence:  sig.confidence ?? 75,
+            riskLevel:   sig.riskLevel ?? "Medium",
+            reasoning:   sig.reasoning ?? "",
+          });
+          return res.json({ ...sig, pair, category, currentPrice, source: "ai", id: saved.id, broadcast });
         }
       }
     } catch (e: any) {
@@ -205,7 +253,7 @@ Respond ONLY with valid JSON:
     }
   }
 
-  // ── Step 3: TA-only fallback (no AI needed) ─────────────────────────────────
+  // ── Step 3: TA-only fallback ─────────────────────────────────────────────────
   if (!ticker || !ta) {
     return res.status(503).json({ error: "Could not fetch live market data. Check Binance connectivity." });
   }
@@ -229,9 +277,20 @@ Respond ONLY with valid JSON:
       : Math.min(entry + atr * 1.5, (ta.resistance ?? entry * 1.02) * 1.001);
     const confidence = Math.min(55 + taScore * 4, 88);
     const riskLevel  = confidence >= 82 ? "Low" : confidence >= 72 ? "Medium" : "High";
-    const reasoning  = `RSI ${ta.rsi14?.toFixed(1)} · MACD ${ta.macdHistogram > 0 ? "positive" : "negative"} · EMA ${ta.ema9 > ta.ema21 ? "bullish" : "bearish"} · BB ${ta.priceVsBB} (TA-only, AI quota reset tomorrow)`;
+    const reasoning  = `RSI ${ta.rsi14?.toFixed(1)} · MACD ${ta.macdHistogram > 0 ? "positive" : "negative"} · EMA ${ta.ema9 > ta.ema21 ? "bullish" : "bearish"} · BB ${ta.priceVsBB} (TA-only)`;
 
-    return res.json({ direction: dir, entryPrice: entry, targetPrice: tp, stopLoss: sl, confidence: Math.round(confidence), riskLevel, reasoning, pair, category, currentPrice, source: "ta" });
+    const { saved, broadcast } = await saveAndBroadcast({
+      pair, category, source: "ta",
+      direction:   dir,
+      entryPrice:  entry,
+      targetPrice: tp,
+      stopLoss:    sl,
+      confidence:  Math.round(confidence),
+      riskLevel,
+      reasoning,
+    });
+
+    return res.json({ direction: dir, entryPrice: entry, targetPrice: tp, stopLoss: sl, confidence: Math.round(confidence), riskLevel, reasoning, pair, category, currentPrice, source: "ta", id: saved.id, broadcast });
   } catch (err: any) {
     req.log.error(err);
     res.status(500).json({ error: err.message ?? "Signal generation failed" });
