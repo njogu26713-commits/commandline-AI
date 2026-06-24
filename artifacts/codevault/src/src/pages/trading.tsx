@@ -538,11 +538,17 @@ export default function Trading() {
                         await fetch("/api/bot/stop", { method: "POST" });
                         toast({ title: "🔴 Bot stopped", description: "Autonomous scanning paused" });
                       } else {
-                        await fetch("/api/bot/start", {
+                        const r = await fetch("/api/bot/start", {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify({ mode: aiMode, intervalMinutes: 5 }),
                         });
+                        const d = await r.json();
+                        if (!r.ok) {
+                          toast({ title: "Cannot start bot", description: d.error ?? "Failed to start bot", variant: "destructive" });
+                          setBotLoading(false);
+                          return;
+                        }
                         toast({ title: "🟢 Bot is live!", description: `Scanning all pairs in ${aiMode} mode every 5 minutes. First scan running now…` });
                       }
                       qc.invalidateQueries({ queryKey: ["signals"] });

@@ -2,7 +2,7 @@ import { db } from "@workspace/db";
 import { tradingSignalsTable, subscribersTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { getDeepAnalysis } from "./binance.js";
-import { sendTypingMessages } from "./whatsapp.js";
+import { sendTypingMessages, getWAStatus } from "./whatsapp.js";
 import { logger } from "../lib/logger.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -309,25 +309,35 @@ async function scanOnce() {
   state.currentAction  = `Signal sent: ${best.pair} ${best.direction} ${best.confidence}%`;
   addLog(`💾 Signal #${saved.id} saved — ${best.pair} ${best.direction} @ ${best.entryPrice.toFixed(2)}`, "signal");
 
+  // ── Broadcast via WhatsApp ──────────────────────────────────────────────────
+  const waStatus = getWAStatus();
+  if (!waStatus.connected) {
+    addLog("⚠ WhatsApp not connected — signal saved to DB only. Connect WhatsApp to deliver signals to subscribers.", "info");
+    return;
+  }
+
   try {
     const subs = await db.select().from(subscribersTable).where(eq(subscribersTable.status, "active"));
     const targets = subs.filter(s => s.signalType === "both" || s.signalType === "crypto");
 
-    if (targets.length > 0) {
-      addLog(`📲 Broadcasting to ${targets.length} WhatsApp subscriber${targets.length !== 1 ? "s" : ""}…`, "info");
-      const messages = buildMessages(best);
-      for (const sub of targets) {
-        try {
-          await sendTypingMessages(sub.phone, messages, 3000);
-          await new Promise(r => setTimeout(r, 1500));
-        } catch (e: any) {
-          addLog(`⚠ Failed to send to +${sub.phone}: ${e?.message ?? "unknown"}`, "error");
-        }
-      }
-      addLog(`✅ Broadcast complete — signal delivered to ${targets.length} subscriber${targets.length !== 1 ? "s" : ""}`, "signal");
-    } else {
-      addLog("📭 Signal saved to DB — no active WhatsApp subscribers yet", "info");
+    if (targets.length === 0) {
+      addLog("📭 Signal saved — WhatsApp connected but no active subscribers yet", "info");
+      return;
     }
+
+    addLog(`📲 Broadcasting to ${targets.length} subscriber${targets.length !== 1 ? "s" : ""} via WhatsApp…`, "info");
+    const messages = buildMessages(best);
+    let sent = 0;
+    for (const sub of targets) {
+      try {
+        await sendTypingMessages(sub.phone, messages, 3000);
+        await new Promise(r => setTimeout(r, 1500));
+        sent++;
+      } catch (e: any) {
+        addLog(`⚠ Failed to send to +${sub.phone}: ${e?.message ?? "unknown"}`, "error");
+      }
+    }
+    addLog(`✅ Broadcast complete — signal delivered to ${sent}/${targets.length} subscriber${targets.length !== 1 ? "s" : ""}`, "signal");
   } catch (e: any) {
     addLog(`❌ Broadcast error: ${e?.message ?? "unknown"}`, "error");
   }
