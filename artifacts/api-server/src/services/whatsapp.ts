@@ -15,6 +15,9 @@ interface WAState {
   phone: string | null;
   sock: ReturnType<typeof makeWASocket> | null;
   connecting: boolean;
+  groupJid: string | null;
+  groupName: string | null;
+  groupInviteCode: string | null;
 }
 
 const state: WAState = {
@@ -23,6 +26,9 @@ const state: WAState = {
   phone: null,
   sock: null,
   connecting: false,
+  groupJid: null,
+  groupName: null,
+  groupInviteCode: null,
 };
 
 export const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
