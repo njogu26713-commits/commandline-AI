@@ -13,6 +13,7 @@ import {
   MessageCircle, Wifi, WifiOff, Sparkles, Loader2, CheckCircle2,
   Bitcoin, RefreshCw, Bot, Play, Pause, FlaskConical,
   ThumbsUp, ThumbsDown, BarChart2, Clock, AlertCircle, XCircle,
+  CalendarDays, Target, Timer,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PageTransition } from "@/components/page-transition";
@@ -210,6 +211,15 @@ export default function Trading() {
   const activeSignals = signals.filter(s => s.status === "active");
   const closedSignals = signals.filter(s => ["won", "lost"].includes(s.status)).slice(0, 10);
 
+  // ── Today's summary ────────────────────────────────────────────────────────
+  const todayStr = new Date().toDateString();
+  const todaySignals = signals.filter(s => new Date(s.createdAt).toDateString() === todayStr);
+  const todayWon    = todaySignals.filter(s => s.status === "won").length;
+  const todayLost   = todaySignals.filter(s => s.status === "lost").length;
+  const todayActive = todaySignals.filter(s => s.status === "active").length;
+  const todayPnl    = todaySignals.reduce((sum, s) => sum + (s.pnl ?? 0), 0);
+  const hasToday    = todaySignals.length > 0;
+
   return (
     <PageTransition className="space-y-5 max-w-7xl mx-auto">
 
@@ -237,7 +247,130 @@ export default function Trading() {
           </h1>
           <p className="text-sm text-muted-foreground">AI-powered WhatsApp trading bot</p>
         </div>
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/60 px-3 py-1.5 rounded-full">
+          <CalendarDays className="w-3.5 h-3.5" />
+          {new Date().toLocaleDateString("en-KE", { weekday: "short", day: "numeric", month: "short" })}
+        </div>
       </div>
+
+      {/* ── Today's Performance Card ─────────────────────────────────────────── */}
+      <Card className={`border-2 transition-colors ${
+        botActive
+          ? "border-indigo-500/40 bg-gradient-to-r from-indigo-500/5 to-green-500/5"
+          : "border-border"
+      }`}>
+        <CardContent className="pt-4 pb-4">
+          <div className="flex flex-wrap items-center gap-4">
+
+            {/* Title + bot badge */}
+            <div className="flex items-center gap-2 min-w-0">
+              <CalendarDays className="w-4 h-4 text-green-500 flex-shrink-0" />
+              <span className="font-semibold text-sm">Today's Performance</span>
+              {botActive ? (
+                <span className="flex items-center gap-1 text-[10px] font-medium text-indigo-500 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" /> BOT LIVE
+                </span>
+              ) : (
+                <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">Bot off</span>
+              )}
+            </div>
+
+            <div className="flex-1" />
+
+            {/* Metrics */}
+            <div className="flex flex-wrap items-center gap-4">
+
+              {/* Signals today */}
+              <div className="text-center">
+                <div className="text-xl font-bold text-foreground">{todaySignals.length}</div>
+                <div className="text-[10px] text-muted-foreground leading-tight">Signals today</div>
+              </div>
+
+              <div className="w-px h-8 bg-border" />
+
+              {/* Won */}
+              <div className="text-center">
+                <div className="text-xl font-bold text-green-500">{todayWon}</div>
+                <div className="text-[10px] text-muted-foreground leading-tight">Won</div>
+              </div>
+
+              {/* Lost */}
+              <div className="text-center">
+                <div className="text-xl font-bold text-red-500">{todayLost}</div>
+                <div className="text-[10px] text-muted-foreground leading-tight">Lost</div>
+              </div>
+
+              {/* Active */}
+              <div className="text-center">
+                <div className="text-xl font-bold text-blue-500">{todayActive}</div>
+                <div className="text-[10px] text-muted-foreground leading-tight">Active</div>
+              </div>
+
+              <div className="w-px h-8 bg-border" />
+
+              {/* PNL */}
+              <div className="text-center">
+                <div className={`text-xl font-bold ${todayPnl > 0 ? "text-green-500" : todayPnl < 0 ? "text-red-500" : "text-muted-foreground"}`}>
+                  {todayPnl > 0 ? "+" : ""}{todayPnl.toFixed(1)}%
+                </div>
+                <div className="text-[10px] text-muted-foreground leading-tight">Today's PNL</div>
+              </div>
+
+              <div className="w-px h-8 bg-border" />
+
+              {/* Win rate today */}
+              <div className="text-center">
+                <div className={`text-xl font-bold ${
+                  (todayWon + todayLost) === 0 ? "text-muted-foreground" :
+                  (todayWon / (todayWon + todayLost)) >= 0.6 ? "text-green-500" : "text-yellow-500"
+                }`}>
+                  {(todayWon + todayLost) === 0 ? "—" : `${Math.round((todayWon / (todayWon + todayLost)) * 100)}%`}
+                </div>
+                <div className="text-[10px] text-muted-foreground leading-tight">Win rate</div>
+              </div>
+
+              {/* Next scan countdown */}
+              {botActive && botStatus?.nextScanAt && (
+                <>
+                  <div className="w-px h-8 bg-border" />
+                  <div className="text-center">
+                    <div className="text-xl font-bold text-indigo-400 flex items-center gap-1 justify-center">
+                      <Timer className="w-4 h-4" />
+                      {new Date(botStatus.nextScanAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </div>
+                    <div className="text-[10px] text-muted-foreground leading-tight">Next scan</div>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Progress bar — won vs lost */}
+          {(todayWon + todayLost) > 0 && (
+            <div className="mt-3 pt-3 border-t border-border/50">
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] text-green-500 w-8 text-right">{todayWon}W</span>
+                <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-green-500 to-green-400 rounded-full transition-all duration-700"
+                    style={{ width: `${(todayWon / (todayWon + todayLost)) * 100}%` }}
+                  />
+                </div>
+                <span className="text-[10px] text-red-500 w-8">{todayLost}L</span>
+              </div>
+            </div>
+          )}
+
+          {/* Empty state */}
+          {!hasToday && (
+            <p className="text-xs text-muted-foreground mt-1">
+              {botActive
+                ? "First scan running now — signals will appear here as they're generated."
+                : "No signals yet today. Start the bot or use AI Send Signal to generate your first."}
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* AI Generate Panel */}
       <Card className="border-green-500/30 bg-green-500/5">
