@@ -1,4 +1,4 @@
-const BINANCE = "https://api.binance.com/api/v3";
+const BINANCE = "https://api.binance.us/api/v3";
 
 export interface TickerData {
   symbol: string;

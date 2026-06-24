@@ -130,7 +130,7 @@ async function analyzeOnePair(pair: string, apiKey: string | undefined): Promise
 
         const { GoogleGenerativeAI } = await import("@google/generative-ai");
         const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
 
         const prompt = `You are an elite autonomous crypto signal engine for CommandLine Signals.
 

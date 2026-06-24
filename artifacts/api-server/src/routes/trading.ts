@@ -151,70 +151,90 @@ router.get("/trading/market/:pair", async (req, res) => {
 
 // ── AI Signal Generation (Gemini 2.5 Flash + Binance data) ───────────────────
 router.post("/trading/signals/generate", async (req, res) => {
+  const { pair = "BTCUSDT", mode = "balanced", category = "crypto" } = req.body;
+  const confidenceMin = mode === "conservative" ? 82 : mode === "balanced" ? 68 : 55;
+
+  // ── Step 1: Fetch live Binance market data ──────────────────────────────────
+  let ticker: any = null;
+  let ta: any     = null;
+  let marketContext = "";
+  let currentPrice  = 0;
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) return res.status(500).json({ error: "GEMINI_API_KEY not configured" });
+    const { getDeepAnalysis } = await import("../services/binance.js");
+    const analysis = await getDeepAnalysis(pair, category as any);
+    ticker       = analysis.ticker;
+    ta           = analysis.ta;
+    currentPrice = ticker.price;
+    const { buildMarketContext, getKlines } = await import("../services/binance.js");
+    const klines = category === "crypto" ? await getKlines(pair, "1h", 20).catch(() => []) : [];
+    marketContext = buildMarketContext(ticker, klines);
+  } catch (e: any) {
+    marketContext = `Pair: ${pair} (live data unavailable)`;
+  }
 
-    const { pair = "BTCUSDT", mode = "balanced", category = "crypto" } = req.body;
-    const confidenceMin = mode === "conservative" ? 82 : mode === "balanced" ? 68 : 55;
-
-    // 1. Fetch real market data from Binance
-    let marketContext = "";
-    let currentPrice  = 0;
+  // ── Step 2: Try Gemini AI analysis ─────────────────────────────────────────
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (apiKey && ticker) {
     try {
-      const [ticker, klines] = await Promise.all([
-        getMarketData(pair, category),
-        category === "crypto" ? getKlines(pair, "1h", 20) : Promise.resolve([]),
-      ]);
-      currentPrice  = ticker.price;
-      marketContext = buildMarketContext(ticker, klines);
-    } catch (e: any) {
-      marketContext = `Pair: ${pair} (live data unavailable — use general knowledge)`;
-    }
+      const { GoogleGenerativeAI } = await import("@google/generative-ai");
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
 
-    // 2. Ask Gemini to analyze and generate a signal
-    const { GoogleGenerativeAI } = await import("@google/generative-ai");
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+      const isForex = category === "forex";
+      const prompt = `You are a professional ${isForex ? "forex" : "cryptocurrency"} trader for CodeMind Signals.
 
-    const isForex = category === "forex";
-    const prompt = `You are a professional ${isForex ? "forex" : "cryptocurrency"} trader and technical analyst for CodeMind Signals.
-
-## LIVE MARKET DATA (from Binance):
+## LIVE MARKET DATA (Binance):
 ${marketContext}
 
-## TASK:
-Analyze the above real-time data and generate a precise ${isForex ? "forex" : "crypto"} trading signal.
+Generate a precise signal. Min confidence: ${confidenceMin}%.
+Respond ONLY with valid JSON:
+{"direction":"BUY","entryPrice":${currentPrice},"targetPrice":0,"stopLoss":0,"confidence":75,"riskLevel":"Medium","reasoning":"<one sentence>"}`;
 
-Risk mode: ${mode} (minimum confidence required: ${confidenceMin}%)
+      const result = await model.generateContent(prompt);
+      const text   = result.response.text().trim();
+      const match  = text.match(/\{[\s\S]*?\}/);
+      if (match) {
+        const signal = JSON.parse(match[0]);
+        if (signal.direction && signal.entryPrice && signal.targetPrice && signal.stopLoss) {
+          return res.json({ ...signal, pair, category, currentPrice, source: "ai" });
+        }
+      }
+    } catch (e: any) {
+      const is429 = (e?.message ?? "").includes("429") || (e?.message ?? "").includes("quota");
+      req.log.warn({ is429 }, "Gemini unavailable — falling back to TA-only signal");
+    }
+  }
 
-Respond ONLY with valid JSON (no markdown, no backticks):
-{
-  "direction": "BUY" or "SELL",
-  "entryPrice": <number — realistic entry based on current price ${currentPrice > 0 ? `(current: ${currentPrice})` : ""}>,
-  "targetPrice": <number — take profit, realistic for ${mode} mode>,
-  "stopLoss": <number — stop loss, tight for ${mode === "conservative" ? "conservative" : "moderate"} risk>,
-  "confidence": <integer between ${confidenceMin} and 95>,
-  "riskLevel": "Low" or "Medium" or "High",
-  "reasoning": "<one clear sentence explaining the setup>"
-}
+  // ── Step 3: TA-only fallback (no AI needed) ─────────────────────────────────
+  if (!ticker || !ta) {
+    return res.status(503).json({ error: "Could not fetch live market data. Check Binance connectivity." });
+  }
 
-Rules:
-- Entry must be within 0.3% of current price ${currentPrice > 0 ? `(${currentPrice})` : ""}
-- TP must have minimum 1.5:1 risk/reward ratio
-- SL must be logical (support/resistance based)
-- Be realistic with current market conditions shown above`;
+  try {
+    const atr  = ta.atr14 ?? currentPrice * 0.01;
+    let bullScore = 0, bearScore = 0;
+    if (ta.rsi14 < 35) bullScore += 3; else if (ta.rsi14 < 45) bullScore += 1;
+    if (ta.rsi14 > 65) bearScore += 3; else if (ta.rsi14 > 55) bearScore += 1;
+    if (ta.ema9 > ta.ema21) bullScore += 2; else bearScore += 2;
+    if (ta.macdHistogram > 0) bullScore += 2; else bearScore += 2;
+    if (ta.priceVsBB === "NEAR_LOWER" || ta.priceVsBB === "BELOW_LOWER") bullScore += 2;
+    if (ta.priceVsBB === "NEAR_UPPER" || ta.priceVsBB === "ABOVE_UPPER") bearScore += 2;
 
-    const result  = await model.generateContent(prompt);
-    const text    = result.response.text().trim();
-    const match   = text.match(/\{[\s\S]*?\}/);
-    if (!match) throw new Error("Invalid AI response format");
-    const signal  = JSON.parse(match[0]);
+    const dir        = bullScore >= bearScore ? "BUY" : "SELL";
+    const taScore    = Math.max(bullScore, bearScore);
+    const entry      = currentPrice;
+    const tp         = dir === "BUY" ? entry + atr * 2.5 : entry - atr * 2.5;
+    const sl         = dir === "BUY"
+      ? Math.max(entry - atr * 1.5, (ta.support ?? entry * 0.98) * 0.999)
+      : Math.min(entry + atr * 1.5, (ta.resistance ?? entry * 1.02) * 1.001);
+    const confidence = Math.min(55 + taScore * 4, 88);
+    const riskLevel  = confidence >= 82 ? "Low" : confidence >= 72 ? "Medium" : "High";
+    const reasoning  = `RSI ${ta.rsi14?.toFixed(1)} · MACD ${ta.macdHistogram > 0 ? "positive" : "negative"} · EMA ${ta.ema9 > ta.ema21 ? "bullish" : "bearish"} · BB ${ta.priceVsBB} (TA-only, AI quota reset tomorrow)`;
 
-    res.json({ ...signal, pair, category, currentPrice });
+    return res.json({ direction: dir, entryPrice: entry, targetPrice: tp, stopLoss: sl, confidence: Math.round(confidence), riskLevel, reasoning, pair, category, currentPrice, source: "ta" });
   } catch (err: any) {
     req.log.error(err);
-    res.status(500).json({ error: err.message ?? "AI generation failed" });
+    res.status(500).json({ error: err.message ?? "Signal generation failed" });
   }
 });
 

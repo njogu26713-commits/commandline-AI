@@ -159,6 +159,12 @@ export default function Trading() {
     } finally { setTestingWA(false); }
   };
 
+  const safeJson = async (r: Response) => {
+    const text = await r.text();
+    if (!text) throw new Error("Empty response from server");
+    try { return JSON.parse(text); } catch { throw new Error("Invalid server response"); }
+  };
+
   // AI generate → auto-save → broadcast
   const handleGenerate = async () => {
     setGenerating(true); setAiReason(""); setLastSignal(null);
@@ -168,8 +174,8 @@ export default function Trading() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ pair, mode: aiMode, category }),
       });
-      const d = await r.json();
-      if (!r.ok) throw new Error(d.error);
+      const d = await safeJson(r);
+      if (!r.ok) throw new Error(d.error ?? "AI generation failed");
       setAiReason(d.reasoning ?? "");
 
       const signalData = {
@@ -191,7 +197,7 @@ export default function Trading() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ signal: { ...signalData, reasoning: d.reasoning } }),
         });
-        const bd = await br.json();
+        const bd = await safeJson(br);
         toast({ title: `📲 Signal sent to ${bd.sent ?? 0} subscribers`, description: `${d.direction} ${pair} @ ${d.entryPrice} — ${d.confidence}% confidence` });
       } else {
         toast({ title: `✅ ${d.direction} signal added`, description: `${pair} @ ${d.entryPrice} — ${d.confidence}% confidence` });
