@@ -484,12 +484,12 @@ export default function Trading() {
                 <div className="flex items-center gap-2 text-xs text-indigo-400 py-2">
                   <Loader2 className="w-3 h-3 animate-spin" /> Running first market scan across all pairs…
                 </div>
-              ) : botLogs.map((log, i) => (
-                <div key={i} className={`flex items-start gap-2 px-2 py-1.5 rounded text-xs ${
-                  log.type === "signal" ? "bg-green-500/10 border border-green-500/20" :
-                  log.type === "skip"   ? "bg-yellow-500/10 border border-yellow-500/20" :
-                  log.type === "error"  ? "bg-red-500/10 border border-red-500/20" :
-                  "bg-muted/40"
+              ) : botLogs.map((log) => (
+                <div key={log.time} className={`flex items-start gap-2 px-2 py-1.5 rounded text-xs ${
+                  log.type === "signal" ? "bg-green-500/10 border border-green-500/20 log-entry-signal" :
+                  log.type === "skip"   ? "bg-yellow-500/10 border border-yellow-500/20 log-entry-skip" :
+                  log.type === "error"  ? "bg-red-500/10 border border-red-500/20 log-entry-error" :
+                  "bg-muted/40 log-entry"
                 }`}>
                   {log.type === "signal" ? <CheckCircle2 className="w-3 h-3 text-green-500 mt-0.5 flex-shrink-0" /> :
                    log.type === "skip"   ? <AlertCircle  className="w-3 h-3 text-yellow-500 mt-0.5 flex-shrink-0" /> :

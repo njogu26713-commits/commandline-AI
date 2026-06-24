@@ -143,8 +143,13 @@ export default function Analytics() {
                   <p className="text-sm text-muted-foreground">No analysis logs yet.</p>
                   <p className="text-xs text-muted-foreground/70 mt-1">Start the bot on the Signals page to see live AI analysis here.</p>
                 </div>
-              ) : logs.map((log, i) => (
-                <div key={i} className={`flex items-start gap-2 px-2.5 py-1.5 rounded text-xs ${logBg(log.type)}`}>
+              ) : logs.map((log) => (
+                <div key={log.time} className={`flex items-start gap-2 px-2.5 py-1.5 rounded text-xs ${
+                  log.type === "signal" ? "bg-green-500/10 border border-green-500/20 log-entry-signal" :
+                  log.type === "skip"   ? "bg-yellow-500/10 border border-yellow-500/20 log-entry-skip" :
+                  log.type === "error"  ? "bg-red-500/10 border border-red-500/20 log-entry-error" :
+                  "bg-muted/40 log-entry"
+                }`}>
                   {logIcon(log.type)}
                   <span className="flex-1 font-mono leading-relaxed">{log.message}</span>
                   <span className="text-muted-foreground whitespace-nowrap flex-shrink-0">
