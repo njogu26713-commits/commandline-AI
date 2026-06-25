@@ -557,36 +557,60 @@ export async function sendTypingMessagesToGroup(messages: string[], typingMs = 1
   }
 }
 
-// Build short, human-style group notification messages for a signal
+// Build short, human-style group notification messages for a signal.
+// Every section is drawn from a pool so no two broadcasts look the same.
 export function buildGroupSignalMessages(signal: {
   pair: string;
   direction: string;
   confidence: number;
   riskLevel?: string;
 }, inviteLink?: string | null): string[] {
-  const dir       = signal.direction;
-  const emoji     = dir === "BUY" ? "🟢" : "🔴";
-  const risk      = signal.riskLevel ?? "Medium";
-  const confTier  = signal.confidence >= 82 ? "very strong 💎" : signal.confidence >= 72 ? "solid 📊" : "decent 👀";
-  const openers   = [
-    `👀 *${signal.pair} just lit up...*`,
-    `🚨 *Signal alert!* Something good just came in`,
-    `⚡ Our AI just confirmed a setup on *${signal.pair}*`,
-    `🔔 *New trade just dropped* — ${signal.pair}`,
-  ];
-  const opener = openers[Math.floor(Math.random() * openers.length)];
+  const { pair, direction: dir, confidence, riskLevel } = signal;
+  const emoji = dir === "BUY" ? "🟢" : "🔴";
+  const risk  = riskLevel ?? "Medium";
 
-  const msgs = [
-    opener,
-    `${emoji} *${signal.pair} ${dir}* — ${confTier} setup\n📊 Confidence: *${signal.confidence}%* | Risk: *${risk}*`,
-    `📲 Full signal details (entry, TP1, TP2 & stop loss) have been sent straight to your DMs.\n\nCheck your private messages from the bot now — don't miss the move! 👇`,
+  // ── MSG 1: teaser / opener ────────────────────────────────────────────────
+  const openers = [
+    `👀 *${pair} just lit up...*`,
+    `🚨 New signal incoming — *${pair}*`,
+    `⚡ The AI just flagged something on *${pair}*`,
+    `🔔 *${pair}* — fresh setup just confirmed`,
+    `💡 Our scanner just locked onto *${pair}*`,
+    `📡 Signal detected — *${pair}* is moving`,
   ];
 
-  if (inviteLink) {
-    msgs.push(`Not in the VIP list yet? You're missing out 😅\nJoin here 👇\n${inviteLink}`);
-  }
+  // ── MSG 2: the actual signal detail ──────────────────────────────────────
+  const confLabel = confidence >= 82 ? "very strong 💎" : confidence >= 72 ? "solid 📊" : "decent 👀";
+  const detailMsgs = [
+    `${emoji} *${pair} ${dir}*\nConfidence: *${confidence}%* | Risk: *${risk}* — ${confLabel} setup`,
+    `The setup is *${pair} ${dir}* ${emoji}\n📊 AI confidence: *${confidence}%* | Risk level: *${risk}*`,
+    `${emoji} *${dir}* on *${pair}* — ${confLabel}\n🤖 Confidence: *${confidence}%* | Risk: *${risk}*`,
+    `Bot says *${dir}* on *${pair}* ${emoji}\nConfidence sitting at *${confidence}%* — ${confLabel} setup. Risk: *${risk}*`,
+    `*${pair} ${dir}* ${emoji} — AI locked in at *${confidence}%* confidence\nRisk rating: *${risk}* | ${confLabel} setup`,
+  ];
 
-  return msgs;
+  // ── MSG 3: DM call-to-action ──────────────────────────────────────────────
+  const ctaMsgs = [
+    `📲 Full details (entry, TP1, TP2 & SL) sent to your DMs.\nCheck your private messages from the bot now 👇`,
+    `📩 I've dropped the full signal in your DMs — entry price, both take profits and the stop loss are there.\nDon't sleep on it 👀`,
+    `The entry, targets and stop loss are waiting in your personal DMs 🔔\nOpen your chat with the bot to see the full breakdown 👇`,
+    `📲 Your DMs just got a full trade plan — entry, TP1, TP2 & stop loss.\nCheck now before the move starts 🚀`,
+    `Everything you need is in your DMs right now.\nEntry • TP1 • TP2 • Stop Loss — all there. Open your bot chat 👇`,
+  ];
+
+  // ── MSG 4 (optional): invite / FOMO closer ────────────────────────────────
+  const inviteMsgs = inviteLink ? [
+    `Not subscribed yet? You're missing live signals 😅\nJoin the VIP list 👇\n${inviteLink}`,
+    `If you haven't signed up yet, now's the time 👀\nGet access here 👇\n${inviteLink}`,
+    `Share this with your trading crew 💪\nAnyone can join here 👇\n${inviteLink}`,
+  ] : [];
+
+  return [
+    pick(openers),
+    pick(detailMsgs),
+    pick(ctaMsgs),
+    ...(inviteMsgs.length ? [pick(inviteMsgs)] : []),
+  ];
 }
 
 export function disconnectWA() {
