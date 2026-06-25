@@ -115,8 +115,8 @@ export default function AiAnalyst() {
 
   return (
     <PageTransition className="flex h-[calc(100vh-8rem)] bg-background border rounded-xl overflow-hidden shadow-sm">
-      {/* Sidebar */}
-      <div className="w-72 border-r flex flex-col bg-muted/30">
+      {/* Sidebar — hidden on mobile */}
+      <div className="hidden md:flex w-72 border-r flex-col bg-muted/30">
         <div className="p-4 border-b">
           <Button onClick={handleNewSession} className="w-full justify-start gap-2" variant="outline" disabled={createSession.isPending}>
             <Plus className="w-4 h-4" /> New Analysis
@@ -180,6 +180,22 @@ export default function AiAnalyst() {
               <BarChart2 className="w-3 h-3 text-blue-500" /> Forex
             </Badge>
           </div>
+        </div>
+
+        {/* Mobile session bar */}
+        <div className="md:hidden border-b p-2 flex gap-2">
+          <Button onClick={handleNewSession} size="sm" variant="outline" className="gap-1.5 shrink-0" disabled={createSession.isPending}>
+            <Plus className="w-3.5 h-3.5" /> New
+          </Button>
+          <select
+            value={activeSessionId ?? ""}
+            onChange={e => setActiveSessionId(Number(e.target.value))}
+            className="flex-1 text-sm rounded-md border bg-background px-2 py-1.5 text-foreground"
+          >
+            {sessions?.map(s => (
+              <option key={s.id} value={s.id}>{s.title}</option>
+            ))}
+          </select>
         </div>
 
         {activeSessionId ? (

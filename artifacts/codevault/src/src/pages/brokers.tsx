@@ -93,14 +93,14 @@ export default function Brokers() {
   return (
     <PageTransition className="space-y-5 max-w-6xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold">Recommended Brokers</h1>
           <p className="text-sm text-muted-foreground mt-0.5">Earn commissions by referring your subscribers to trusted brokers</p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button onClick={openAdd} className="gap-1.5 bg-green-600 hover:bg-green-700 text-white">
+            <Button onClick={openAdd} className="gap-1.5 bg-green-600 hover:bg-green-700 text-white self-start sm:self-auto">
               <Plus className="w-4 h-4" /> Add Broker
             </Button>
           </DialogTrigger>
@@ -168,7 +168,7 @@ export default function Brokers() {
       </div>
 
       {/* Filter tabs */}
-      <div className="flex gap-1.5">
+      <div className="flex flex-wrap gap-1.5">
         {(["all", "crypto", "forex", "both"] as const).map(f => (
           <button key={f} onClick={() => setFilter(f)}
             className={`text-xs px-3 py-1.5 rounded-full border transition-all font-medium capitalize ${filter === f ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:border-primary/50"}`}>

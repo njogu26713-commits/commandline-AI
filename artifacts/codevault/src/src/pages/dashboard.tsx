@@ -240,10 +240,10 @@ export default function Analytics() {
                 <div key={s.id} className="flex items-center gap-2 px-2 py-2 rounded hover:bg-muted/50 text-xs border-b border-border/40 last:border-0">
                   <span className={`font-bold w-10 ${s.direction === "BUY" ? "text-green-500" : "text-red-500"}`}>{s.direction}</span>
                   <span className="font-mono font-semibold w-20">{s.pair}</span>
-                  <span className="text-muted-foreground w-24 font-mono">
+                  <span className="hidden sm:inline text-muted-foreground w-24 font-mono">
                     {s.entryPrice >= 1000 ? s.entryPrice.toLocaleString("en-US", { maximumFractionDigits: 2 }) : s.entryPrice.toFixed(4)}
                   </span>
-                  <span className="text-muted-foreground w-12">{s.confidence}%</span>
+                  <span className="hidden sm:inline text-muted-foreground w-12">{s.confidence}%</span>
                   <div className="flex-1">
                     {s.status === "won"    && <Badge className="bg-green-500/10 text-green-500 border-green-500/30 text-[10px] h-5">✅ WON {s.pnl ? `+${s.pnl}%` : ""}</Badge>}
                     {s.status === "lost"   && <Badge className="bg-red-500/10 text-red-500 border-red-500/30 text-[10px] h-5">❌ LOST {s.pnl ? `${s.pnl}%` : ""}</Badge>}

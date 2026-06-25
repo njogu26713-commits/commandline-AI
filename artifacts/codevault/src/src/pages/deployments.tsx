@@ -283,12 +283,12 @@ export default function Deployments() {
   return (
     <PageTransition className="space-y-5 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex justify-between items-start">
+      <div className="flex flex-col sm:flex-row sm:justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2"><Users className="w-6 h-6 text-green-500"/> Subscribers</h1>
           <p className="text-sm text-muted-foreground">Manage signal subscribers and M-Pesa subscriptions</p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2 items-start">
           <Button variant="outline" onClick={validateNumbers} disabled={validating} className="gap-1.5 text-xs" title={lastValidated ? `Last checked: ${lastValidated.toLocaleTimeString()}` : "Check if all numbers are registered on WhatsApp"}>
             {validating ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <ShieldCheck className="w-3.5 h-3.5"/>}
             {validating ? "Checking…" : "Validate Numbers"}
@@ -380,6 +380,7 @@ export default function Deployments() {
           </div>
         </CardHeader>
         <CardContent>
+          <div className="overflow-x-auto -mx-6 px-6 sm:mx-0 sm:px-0">
           <Table>
             <TableHeader>
               <TableRow>
@@ -430,6 +431,7 @@ export default function Deployments() {
               ))}
             </TableBody>
           </Table>
+          </div>
         </CardContent>
       </Card>
 

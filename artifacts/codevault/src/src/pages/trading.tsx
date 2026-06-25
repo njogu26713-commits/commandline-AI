@@ -256,14 +256,14 @@ export default function Trading() {
       </Dialog>
 
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <Zap className="w-6 h-6 text-green-500" /> CommandLine Signals
           </h1>
           <p className="text-sm text-muted-foreground">AI-powered WhatsApp trading bot</p>
         </div>
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/60 px-3 py-1.5 rounded-full">
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/60 px-3 py-1.5 rounded-full self-start sm:self-auto">
           <CalendarDays className="w-3.5 h-3.5" />
           {new Date().toLocaleDateString("en-KE", { weekday: "short", day: "numeric", month: "short" })}
         </div>
@@ -276,89 +276,67 @@ export default function Trading() {
           : "border-border"
       }`}>
         <CardContent className="pt-4 pb-4">
-          <div className="flex flex-wrap items-center gap-4">
+          {/* Title row */}
+          <div className="flex items-center gap-2 mb-3">
+            <CalendarDays className="w-4 h-4 text-green-500 flex-shrink-0" />
+            <span className="font-semibold text-sm">Today's Performance</span>
+            {botActive ? (
+              <span className="flex items-center gap-1 text-[10px] font-medium text-indigo-500 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" /> BOT LIVE
+              </span>
+            ) : (
+              <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">Bot off</span>
+            )}
+          </div>
 
-            {/* Title + bot badge */}
-            <div className="flex items-center gap-2 min-w-0">
-              <CalendarDays className="w-4 h-4 text-green-500 flex-shrink-0" />
-              <span className="font-semibold text-sm">Today's Performance</span>
-              {botActive ? (
-                <span className="flex items-center gap-1 text-[10px] font-medium text-indigo-500 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/30">
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" /> BOT LIVE
-                </span>
-              ) : (
-                <span className="text-[10px] text-muted-foreground bg-muted px-2 py-0.5 rounded-full">Bot off</span>
-              )}
+          {/* Metrics — 3-col grid on mobile, flex row on sm+ */}
+          <div className="grid grid-cols-3 sm:flex sm:flex-wrap sm:items-center gap-2 sm:gap-4">
+            <div className="text-center">
+              <div className="text-xl font-bold text-foreground">{todaySignals.length}</div>
+              <div className="text-[10px] text-muted-foreground leading-tight">Signals today</div>
             </div>
-
-            <div className="flex-1" />
-
-            {/* Metrics */}
-            <div className="flex flex-wrap items-center gap-4">
-
-              {/* Signals today */}
-              <div className="text-center">
-                <div className="text-xl font-bold text-foreground">{todaySignals.length}</div>
-                <div className="text-[10px] text-muted-foreground leading-tight">Signals today</div>
+            <div className="hidden sm:block w-px h-8 bg-border" />
+            <div className="text-center">
+              <div className="text-xl font-bold text-green-500">{todayWon}</div>
+              <div className="text-[10px] text-muted-foreground leading-tight">Won</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-bold text-red-500">{todayLost}</div>
+              <div className="text-[10px] text-muted-foreground leading-tight">Lost</div>
+            </div>
+            <div className="text-center">
+              <div className="text-xl font-bold text-blue-500">{todayActive}</div>
+              <div className="text-[10px] text-muted-foreground leading-tight">Active</div>
+            </div>
+            <div className="hidden sm:block w-px h-8 bg-border" />
+            <div className="text-center">
+              <div className={`text-xl font-bold ${todayPnl > 0 ? "text-green-500" : todayPnl < 0 ? "text-red-500" : "text-muted-foreground"}`}>
+                {todayPnl > 0 ? "+" : ""}{todayPnl.toFixed(1)}%
               </div>
-
-              <div className="w-px h-8 bg-border" />
-
-              {/* Won */}
-              <div className="text-center">
-                <div className="text-xl font-bold text-green-500">{todayWon}</div>
-                <div className="text-[10px] text-muted-foreground leading-tight">Won</div>
+              <div className="text-[10px] text-muted-foreground leading-tight">Today's PNL</div>
+            </div>
+            <div className="hidden sm:block w-px h-8 bg-border" />
+            <div className="text-center">
+              <div className={`text-xl font-bold ${
+                (todayWon + todayLost) === 0 ? "text-muted-foreground" :
+                (todayWon / (todayWon + todayLost)) >= 0.6 ? "text-green-500" : "text-yellow-500"
+              }`}>
+                {(todayWon + todayLost) === 0 ? "—" : `${Math.round((todayWon / (todayWon + todayLost)) * 100)}%`}
               </div>
-
-              {/* Lost */}
-              <div className="text-center">
-                <div className="text-xl font-bold text-red-500">{todayLost}</div>
-                <div className="text-[10px] text-muted-foreground leading-tight">Lost</div>
-              </div>
-
-              {/* Active */}
-              <div className="text-center">
-                <div className="text-xl font-bold text-blue-500">{todayActive}</div>
-                <div className="text-[10px] text-muted-foreground leading-tight">Active</div>
-              </div>
-
-              <div className="w-px h-8 bg-border" />
-
-              {/* PNL */}
-              <div className="text-center">
-                <div className={`text-xl font-bold ${todayPnl > 0 ? "text-green-500" : todayPnl < 0 ? "text-red-500" : "text-muted-foreground"}`}>
-                  {todayPnl > 0 ? "+" : ""}{todayPnl.toFixed(1)}%
-                </div>
-                <div className="text-[10px] text-muted-foreground leading-tight">Today's PNL</div>
-              </div>
-
-              <div className="w-px h-8 bg-border" />
-
-              {/* Win rate today */}
-              <div className="text-center">
-                <div className={`text-xl font-bold ${
-                  (todayWon + todayLost) === 0 ? "text-muted-foreground" :
-                  (todayWon / (todayWon + todayLost)) >= 0.6 ? "text-green-500" : "text-yellow-500"
-                }`}>
-                  {(todayWon + todayLost) === 0 ? "—" : `${Math.round((todayWon / (todayWon + todayLost)) * 100)}%`}
-                </div>
-                <div className="text-[10px] text-muted-foreground leading-tight">Win rate</div>
-              </div>
-
-              {/* Next scan countdown */}
-              {botActive && botStatus?.nextScanAt && (
-                <>
-                  <div className="w-px h-8 bg-border" />
-                  <div className="text-center">
-                    <div className="text-xl font-bold text-indigo-400 flex items-center gap-1 justify-center">
-                      <Timer className="w-4 h-4" />
-                      {new Date(botStatus.nextScanAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                    </div>
-                    <div className="text-[10px] text-muted-foreground leading-tight">Next scan</div>
+              <div className="text-[10px] text-muted-foreground leading-tight">Win rate</div>
+            </div>
+            {botActive && botStatus?.nextScanAt && (
+              <>
+                <div className="hidden sm:block w-px h-8 bg-border" />
+                <div className="text-center">
+                  <div className="text-xl font-bold text-indigo-400 flex items-center gap-1 justify-center">
+                    <Timer className="w-4 h-4" />
+                    {new Date(botStatus.nextScanAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                   </div>
-                </>
-              )}
-            </div>
+                  <div className="text-[10px] text-muted-foreground leading-tight">Next scan</div>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Progress bar — won vs lost */}
@@ -427,7 +405,7 @@ export default function Trading() {
 
             {/* Generate button */}
             <Button onClick={handleGenerate} disabled={generating}
-              className="gap-2 bg-green-600 hover:bg-green-700 text-white ml-auto">
+              className="gap-2 bg-green-600 hover:bg-green-700 text-white w-full sm:w-auto sm:ml-auto">
               {generating
                 ? <><Loader2 className="w-4 h-4 animate-spin" /> Analyzing…</>
                 : <><Sparkles className="w-4 h-4" /> AI Send Signal</>}
@@ -623,7 +601,7 @@ export default function Trading() {
                   </div>
                 )}
                 {/* Stats row */}
-                <div className="grid grid-cols-4 gap-2 text-center">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
                   {[
                     { label: "Signals Today", val: botStatus?.signalsToday ?? 0, color: "text-green-500" },
                     { label: "Pairs Watched", val: botStatus?.pairs?.length ?? 7, color: "text-blue-500" },
@@ -702,19 +680,19 @@ export default function Trading() {
               {activeSignals.map(s => {
                 const rr = Math.abs(s.targetPrice - s.entryPrice) / Math.abs(s.entryPrice - s.stopLoss);
                 return (
-                  <div key={s.id} className="flex items-center justify-between p-3 rounded-lg border bg-muted/30">
-                    <div className="flex items-center gap-3">
-                      <div className={`p-1.5 rounded-md ${s.direction === "BUY" ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"}`}>
+                  <div key={s.id} className="flex items-center justify-between p-3 rounded-lg border bg-muted/30 gap-2">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
+                      <div className={`p-1.5 rounded-md flex-shrink-0 ${s.direction === "BUY" ? "bg-green-500/10 text-green-500" : "bg-red-500/10 text-red-500"}`}>
                         {s.direction === "BUY" ? <TrendingUp className="w-4 h-4"/> : <TrendingDown className="w-4 h-4"/>}
                       </div>
-                      <div>
+                      <div className="min-w-0">
                         <div className="font-bold text-sm">{s.pair} <span className="text-xs font-normal text-muted-foreground">({s.direction})</span></div>
-                        <div className="text-xs text-muted-foreground">
+                        <div className="text-xs text-muted-foreground truncate">
                           Entry {fmtPrice(s.entryPrice, s.category)} → TP {fmtPrice(s.targetPrice, s.category)} | R:R {rr.toFixed(1)}
                         </div>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-shrink-0">
                       <Badge variant="outline" className={`text-[10px] ${riskColor(s.confidence)}`}>{s.confidence}%</Badge>
                       <Button size="sm" variant="outline" className="h-7 px-2 text-green-500 border-green-500/40 hover:bg-green-500/10" onClick={() => handleResult(s, "won")}>
                         <ThumbsUp className="w-3 h-3"/>
@@ -741,6 +719,7 @@ export default function Trading() {
         </CardHeader>
         <CardContent>
           {sigsLoading ? <Skeleton className="h-40 w-full"/> : (
+            <div className="overflow-x-auto -mx-6 px-6 sm:mx-0 sm:px-0">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -779,6 +758,7 @@ export default function Trading() {
                 )}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
