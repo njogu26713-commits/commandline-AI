@@ -54,6 +54,81 @@ let state: BotState = {
   lastSignalPair: null,
 };
 
+// How many minutes to wait for confirmation before broadcasting a signal
+let confirmationWaitMinutes = 3;
+
+// ── Market session detector ────────────────────────────────────────────────────
+interface MarketSession {
+  name: string;
+  tradeable: boolean;
+  quality: "peak" | "good" | "moderate" | "low";
+  emoji: string;
+  reason: string;
+}
+
+function getMarketSession(): MarketSession {
+  const utcHour = new Date().getUTCHours();
+
+  // London–NY overlap (peak): 13:00–16:00 UTC
+  if (utcHour >= 13 && utcHour < 16) {
+    return { name: "London–NY Overlap", tradeable: true, quality: "peak", emoji: "🔥",
+      reason: "Peak liquidity — London & New York both active. Best time to trade." };
+  }
+  // New York session: 13:00–21:00 UTC
+  if (utcHour >= 16 && utcHour < 21) {
+    return { name: "New York Session", tradeable: true, quality: "good", emoji: "🟢",
+      reason: "NY session in full swing — high crypto & forex volume." };
+  }
+  // London session: 08:00–13:00 UTC
+  if (utcHour >= 8 && utcHour < 13) {
+    return { name: "London Session", tradeable: true, quality: "good", emoji: "🟢",
+      reason: "London session open — strong forex and crypto movement." };
+  }
+  // Asian session: 00:00–08:00 UTC (moderate)
+  if (utcHour >= 0 && utcHour < 8) {
+    return { name: "Asian Session", tradeable: true, quality: "moderate", emoji: "🟡",
+      reason: "Asian session — moderate volume. Crypto pairs preferred. Signals may be smaller." };
+  }
+  // Dead zone: 21:00–24:00 UTC
+  return { name: "Dead Zone", tradeable: false, quality: "low", emoji: "🔴",
+    reason: "Low-volume window (NY close, London not yet open). Signals are unreliable — waiting." };
+}
+
+// Build the group session-status message
+function buildSessionMessage(session: MarketSession, nextScanMin: number): string {
+  const now = new Date();
+  const utcTime = `${String(now.getUTCHours()).padStart(2, "0")}:${String(now.getUTCMinutes()).padStart(2, "0")} UTC`;
+
+  if (!session.tradeable) {
+    return (
+      `⚠️ *MARKET UPDATE — ${utcTime}*\n\n` +
+      `${session.emoji} *${session.name}*\n` +
+      `❌ *NOT a good time to trade right now.*\n\n` +
+      `📋 ${session.reason}\n\n` +
+      `⏰ Next check in ${nextScanMin} minute${nextScanMin !== 1 ? "s" : ""}. Stay patient — quality over quantity. 💪`
+    );
+  }
+  const qualityLabel = session.quality === "peak" ? "🔥 PEAK CONDITIONS" :
+                       session.quality === "good"  ? "✅ GOOD CONDITIONS" : "⚡ MODERATE CONDITIONS";
+  return (
+    `📊 *MARKET UPDATE — ${utcTime}*\n\n` +
+    `${session.emoji} *${session.name}*\n` +
+    `${qualityLabel}\n\n` +
+    `📋 ${session.reason}\n\n` +
+    `🤖 AI scanning ${state.pairs.length} pairs now... Next update in ${nextScanMin} min.`
+  );
+}
+
+// Build the confirmation-wait message sent to group
+function buildConfirmationMessage(pair: string, direction: string, confidence: number, waitMin: number): string {
+  return (
+    `⏳ *SIGNAL DETECTED — CONFIRMING...*\n\n` +
+    `🎯 *${pair} ${direction}* | ${confidence}% confidence\n\n` +
+    `🔍 AI is waiting *${waitMin} minute${waitMin !== 1 ? "s" : ""}* to confirm the setup holds before sending the full signal.\n\n` +
+    `_Stay ready — signal incoming shortly._ 🚀`
+  );
+}
+
 let logs: BotLog[] = [];
 let timerId: NodeJS.Timeout | null = null;
 
@@ -327,6 +402,31 @@ async function scanOnce() {
   state.currentAction = "Scanning all pairs…";
   state.scannedPairs  = 0;
 
+  // ── Market session check + group broadcast ──────────────────────────────────
+  const session = getMarketSession();
+  addLog(`📅 Market session: ${session.emoji} ${session.name} (${session.quality}) — tradeable: ${session.tradeable}`, "info");
+
+  const waStatus = getWAStatus();
+  if (waStatus.connected) {
+    try {
+      const groupInfo = await getSignalGroupInfo();
+      if (groupInfo.exists) {
+        const sessionMsg = buildSessionMessage(session, state.intervalMinutes);
+        await sendMessageToGroup(sessionMsg);
+        addLog(`📢 Session update sent to group: ${session.name}`, "info");
+      }
+    } catch (e: any) {
+      addLog(`⚠ Could not send session update to group: ${e?.message ?? "unknown"}`, "error");
+    }
+  }
+
+  // Skip scan entirely during dead zone (low volume, unreliable signals)
+  if (!session.tradeable) {
+    state.currentAction = `⏸ Dead zone — skipping scan until ${session.name} ends`;
+    addLog(`⏸ Scan skipped — ${session.name}: ${session.reason}`, "skip");
+    return;
+  }
+
   addLog(`🚀 Scan started — ${state.pairs.length} pairs | Mode: ${state.mode} | Interval: ${state.intervalMinutes} min`, "info");
 
   const apiKey = process.env.GROQ_API_KEY;
@@ -372,6 +472,22 @@ async function scanOnce() {
     addLog(`↩ Using alternative: ${best.pair} ${best.direction} @ ${best.entryPrice.toFixed(2)}`, "info");
   }
 
+  // ── Confirmation wait — notify group, then wait X min before broadcasting ───
+  if (waStatus.connected && confirmationWaitMinutes > 0) {
+    try {
+      const groupInfo = await getSignalGroupInfo();
+      if (groupInfo.exists) {
+        const confirmMsg = buildConfirmationMessage(best.pair, best.direction, best.confidence, confirmationWaitMinutes);
+        await sendMessageToGroup(confirmMsg);
+        addLog(`⏳ Confirmation message sent — waiting ${confirmationWaitMinutes} min before broadcasting signal`, "info");
+      }
+    } catch {}
+    state.currentAction = `⏳ Confirming ${best.pair} ${best.direction} — waiting ${confirmationWaitMinutes} min…`;
+    await new Promise(r => setTimeout(r, confirmationWaitMinutes * 60 * 1000));
+    if (!state.active) return; // bot was stopped during wait
+    addLog(`✅ Confirmation wait complete — proceeding with ${best.pair} ${best.direction} broadcast`, "info");
+  }
+
   const [saved] = await db.insert(tradingSignalsTable).values({
     pair:        best.pair,
     direction:   best.direction,
@@ -390,8 +506,7 @@ async function scanOnce() {
   addLog(`💾 Signal #${saved.id} saved — ${best.pair} ${best.direction} @ ${best.entryPrice.toFixed(2)}`, "signal");
 
   // ── Broadcast via WhatsApp ──────────────────────────────────────────────────
-  const waStatus = getWAStatus();
-  if (!waStatus.connected) {
+  if (!getWAStatus().connected) {
     addLog("⚠ WhatsApp not connected — signal saved to DB only. Connect WhatsApp to deliver signals to subscribers.", "info");
     return;
   }
@@ -462,6 +577,7 @@ export function startBot(opts: {
   mode?: "conservative" | "balanced" | "aggressive";
   intervalMinutes?: number;
   pairs?: string[];
+  confirmationWaitMinutes?: number;
 }) {
   if (state.active) stopBot();
 
@@ -472,9 +588,10 @@ export function startBot(opts: {
   state.signalsToday    = 0;
   state.currentAction   = "Starting — running first market scan…";
   state.nextScanAt      = new Date(Date.now() + state.intervalMinutes * 60 * 1000).toISOString();
+  confirmationWaitMinutes = opts.confirmationWaitMinutes ?? confirmationWaitMinutes;
 
   logs = [];
-  addLog(`🤖 Bot activated — Mode: ${state.mode} | Interval: ${state.intervalMinutes} min | Watching ${state.pairs.length} pairs`, "info");
+  addLog(`🤖 Bot activated — Mode: ${state.mode} | Interval: ${state.intervalMinutes} min | Watching ${state.pairs.length} pairs | Confirm wait: ${confirmationWaitMinutes} min`, "info");
   addLog(`📋 Pairs: ${state.pairs.join(" · ")}`, "info");
 
   scanOnce().catch(e => {
