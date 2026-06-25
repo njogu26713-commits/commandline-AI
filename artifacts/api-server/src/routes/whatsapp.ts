@@ -123,7 +123,6 @@ router.post("/whatsapp/groups/create", async (req, res) => {
     const name = req.body.name ?? "CommandLine Signals 🔥";
     const allSubs = await db.select().from(subscribersTable).where(eq(subscribersTable.status, "active"));
     const phones = allSubs.map(s => s.phone);
-    if (phones.length === 0) return res.status(400).json({ error: "No active subscribers to add to the group" });
     const result = await createSignalGroup(name, phones);
     res.json({ ...result, members: phones.length });
   } catch (err: any) {
