@@ -102,7 +102,7 @@ async function generateResultMessage(signal: {
     try {
       const { GoogleGenerativeAI } = await import("@google/generative-ai");
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
       const prompt = signal.status === "won"
         ? `You are the admin of a WhatsApp trading signals group called CommandLine Signals. A signal just hit its target — it's a WIN! Post 2 short, hype messages to the group the way a real human admin would type, not a bot.
@@ -275,7 +275,7 @@ async function analyzeForexPair(pair: string, apiKey: string | undefined): Promi
 
         const { GoogleGenerativeAI } = await import("@google/generative-ai");
         const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
         const prompt = `You are an elite autonomous forex signal engine for CommandLine Signals.
 
@@ -407,7 +407,7 @@ async function analyzeOnePair(pair: string, apiKey: string | undefined): Promise
 
         const { GoogleGenerativeAI } = await import("@google/generative-ai");
         const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
         const prompt = `You are an elite autonomous crypto signal engine for CommandLine Signals.
 

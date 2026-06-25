@@ -238,7 +238,7 @@ async function handleIncomingMessage(
     const { GoogleGenerativeAI } = await import("@google/generative-ai");
     const genAI  = new GoogleGenerativeAI(apiKey);
     const model  = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.0-flash",
       systemInstruction: AI_REPLY_SYSTEM,
     });
     const result = await model.generateContent(text);
@@ -615,7 +615,7 @@ export async function generateGroupSignalMessages(signal: {
     try {
       const { GoogleGenerativeAI } = await import("@google/generative-ai");
       const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
       const inviteInstruction = inviteLink
         ? `\n- If you want, you can add a 4th message inviting people to join with this link: ${inviteLink}`
