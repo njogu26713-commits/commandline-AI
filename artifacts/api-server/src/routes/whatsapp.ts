@@ -11,6 +11,7 @@ import {
   addToSignalGroup,
   removeFromSignalGroup,
   getSignalGroupInfo,
+  checkNumbersOnWhatsApp,
 } from "../services/whatsapp.js";
 
 const router = Router();
@@ -82,6 +83,26 @@ router.post("/whatsapp/broadcast", async (req, res) => {
   } catch (err: any) {
     req.log.error(err);
     res.status(500).json({ error: err.message ?? "Broadcast failed" });
+  }
+});
+
+// ── Number Validator ─────────────────────────────────────────────────────────
+router.get("/whatsapp/validate", async (_req, res) => {
+  try {
+    const status = getWAStatus();
+    if (!status.connected) return res.status(400).json({ error: "WhatsApp not connected" });
+    const subs = await db.select().from(subscribersTable);
+    const phones = subs.map(s => s.phone);
+    const results = await checkNumbersOnWhatsApp(phones);
+    const payload = subs.map(s => ({
+      id: s.id,
+      phone: s.phone,
+      name: s.name,
+      onWhatsApp: results[s.phone] ?? null,
+    }));
+    res.json(payload);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message ?? "Validation failed" });
   }
 });
 

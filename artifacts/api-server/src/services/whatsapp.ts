@@ -349,6 +349,27 @@ export async function broadcastSignal(
   return { sent, total: active.length, failed: failed.length };
 }
 
+// ── Number Validator ─────────────────────────────────────────────────────────
+export async function checkNumbersOnWhatsApp(phones: string[]): Promise<Record<string, boolean | null>> {
+  const result: Record<string, boolean | null> = {};
+  if (!state.sock || !state.connected) {
+    for (const p of phones) result[p] = null; // null = unknown (WA not connected)
+    return result;
+  }
+  for (const phone of phones) {
+    const jid = phone.replace(/[^0-9]/g, "") + "@s.whatsapp.net";
+    try {
+      const [info] = await (state.sock as any).onWhatsApp(jid);
+      result[phone] = info?.exists ?? false;
+    } catch {
+      // onWhatsApp may fail for some numbers — treat as unknown
+      result[phone] = null;
+    }
+    await delay(400); // avoid hammering WA servers
+  }
+  return result;
+}
+
 // ── WhatsApp Group Management ─────────────────────────────────────────────────
 function toJid(phone: string) {
   return phone.replace(/[^0-9]/g, "") + "@s.whatsapp.net";

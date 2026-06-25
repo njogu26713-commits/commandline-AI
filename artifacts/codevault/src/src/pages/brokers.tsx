@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { ExternalLink, Plus, Pencil, Trash2, Star, TrendingUp, Shield, Zap } from "lucide-react";
-import PageTransition from "@/components/page-transition";
+import { PageTransition } from "@/components/page-transition";
 
 interface Broker {
   id: number;

@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Users, Plus, Trash2, ToggleLeft, ToggleRight, Bitcoin, DollarSign,
   TrendingUp, CheckCircle2, XCircle, Loader2, Smartphone, Crown,
-  Star, Zap, CreditCard,
+  Star, Zap, CreditCard, ShieldCheck, AlertTriangle, HelpCircle, RefreshCw,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PageTransition } from "@/components/page-transition";
@@ -198,6 +198,13 @@ function MpesaDialog({ sub }: { sub: Subscriber }) {
   );
 }
 
+// ── WA Number Status Badge ─────────────────────────────────────────────────────
+function WaBadge({ status }: { status: boolean | null | undefined }) {
+  if (status === true)  return <span title="On WhatsApp" className="flex items-center gap-0.5 text-[10px] text-green-500"><ShieldCheck className="w-3 h-3"/>WA</span>;
+  if (status === false) return <span title="Not on WhatsApp" className="flex items-center gap-0.5 text-[10px] text-red-500"><AlertTriangle className="w-3 h-3"/>No WA</span>;
+  return <span title="Not checked yet" className="flex items-center gap-0.5 text-[10px] text-muted-foreground"><HelpCircle className="w-3 h-3"/>?</span>;
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function Deployments() {
   const { data: subs = [], isLoading } = useSubs();
@@ -208,6 +215,42 @@ export default function Deployments() {
 
   const [isOpen, setIsOpen] = useState(false);
   const [form, setForm] = useState({ name: "", phone: "", plan: "basic", signalType: "both" });
+
+  // WA number validation state
+  const [validating, setValidating]         = useState(false);
+  const [waStatus, setWaStatus]             = useState<Record<number, boolean | null>>({});
+  const [lastValidated, setLastValidated]   = useState<Date | null>(null);
+
+  const validateNumbers = async () => {
+    setValidating(true);
+    try {
+      const r = await fetch("/api/whatsapp/validate");
+      if (!r.ok) {
+        const d = await r.json();
+        toast({ title: "Validation failed", description: d.error ?? "WhatsApp not connected?", variant: "destructive" });
+        return;
+      }
+      const data: { id: number; phone: string; name: string; onWhatsApp: boolean | null }[] = await r.json();
+      const map: Record<number, boolean | null> = {};
+      for (const item of data) map[item.id] = item.onWhatsApp;
+      setWaStatus(map);
+      setLastValidated(new Date());
+      const invalid = data.filter(d => d.onWhatsApp === false);
+      if (invalid.length === 0) {
+        toast({ title: "✅ All numbers verified", description: "Every subscriber is on WhatsApp." });
+      } else {
+        toast({
+          title: `⚠ ${invalid.length} number${invalid.length !== 1 ? "s" : ""} not on WhatsApp`,
+          description: invalid.map(d => d.name).join(", "),
+          variant: "destructive",
+        });
+      }
+    } catch (e: any) {
+      toast({ title: "Error", description: e.message, variant: "destructive" });
+    } finally {
+      setValidating(false);
+    }
+  };
 
   const handleAdd = async () => {
     if (!form.name || !form.phone) return;
@@ -245,6 +288,11 @@ export default function Deployments() {
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2"><Users className="w-6 h-6 text-green-500"/> Subscribers</h1>
           <p className="text-sm text-muted-foreground">Manage signal subscribers and M-Pesa subscriptions</p>
         </div>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={validateNumbers} disabled={validating} className="gap-1.5 text-xs" title={lastValidated ? `Last checked: ${lastValidated.toLocaleTimeString()}` : "Check if all numbers are registered on WhatsApp"}>
+            {validating ? <Loader2 className="w-3.5 h-3.5 animate-spin"/> : <ShieldCheck className="w-3.5 h-3.5"/>}
+            {validating ? "Checking…" : "Validate Numbers"}
+          </Button>
         <Dialog open={isOpen} onOpenChange={setIsOpen}>
           <DialogTrigger asChild>
             <Button className="gap-2 bg-green-600 hover:bg-green-700 text-white"><Plus className="w-4 h-4"/> Add Subscriber</Button>
@@ -293,6 +341,7 @@ export default function Deployments() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Stats */}
@@ -318,8 +367,17 @@ export default function Deployments() {
       {/* Subscriber Table */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Subscriber List</CardTitle>
-          <CardDescription>Click 💳 to collect M-Pesa payment and upgrade their plan</CardDescription>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-base">Subscriber List</CardTitle>
+              <CardDescription>Click 💳 to collect M-Pesa payment and upgrade their plan</CardDescription>
+            </div>
+            {lastValidated && (
+              <span className="text-[10px] text-muted-foreground flex items-center gap-1">
+                <RefreshCw className="w-2.5 h-2.5"/> Last checked {lastValidated.toLocaleTimeString()}
+              </span>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <Table>
@@ -327,6 +385,7 @@ export default function Deployments() {
               <TableRow>
                 <TableHead>Name</TableHead>
                 <TableHead>WhatsApp</TableHead>
+                <TableHead>WA Status</TableHead>
                 <TableHead>Signals</TableHead>
                 <TableHead>Plan</TableHead>
                 <TableHead>Status</TableHead>
@@ -336,9 +395,9 @@ export default function Deployments() {
             </TableHeader>
             <TableBody>
               {isLoading ? Array(4).fill(0).map((_,i) => (
-                <TableRow key={i}>{Array(7).fill(0).map((_,j)=><TableCell key={j}><Skeleton className="h-4 w-full"/></TableCell>)}</TableRow>
+                <TableRow key={i}>{Array(8).fill(0).map((_,j)=><TableCell key={j}><Skeleton className="h-4 w-full"/></TableCell>)}</TableRow>
               )) : subs.length === 0 ? (
-                <TableRow><TableCell colSpan={7} className="h-32 text-center text-muted-foreground">
+                <TableRow><TableCell colSpan={8} className="h-32 text-center text-muted-foreground">
                   <div className="flex flex-col items-center gap-2">
                     <Users className="w-8 h-8 opacity-30"/>No subscribers yet.
                   </div>
@@ -347,6 +406,7 @@ export default function Deployments() {
                 <TableRow key={s.id} className={s.status !== "active" ? "opacity-50" : ""}>
                   <TableCell className="font-medium">{s.name}</TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">{s.phone}</TableCell>
+                  <TableCell><WaBadge status={waStatus[s.id]}/></TableCell>
                   <TableCell><SignalTypeBadge type={s.signalType}/></TableCell>
                   <TableCell><PlanBadge plan={s.plan}/></TableCell>
                   <TableCell>
