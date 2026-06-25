@@ -225,18 +225,25 @@ async function handleIncomingMessage(
   replyCooldowns.set(jid, now);
 
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return;
+  if (!apiKey) {
+    console.warn("[AI-reply] No GEMINI_API_KEY set — skipping reply");
+    return;
+  }
+
+  console.log(`[AI-reply] Generating reply for jid=${jid} text="${text.slice(0, 80)}"`);
 
   try {
     const { GoogleGenerativeAI } = await import("@google/generative-ai");
     const genAI  = new GoogleGenerativeAI(apiKey);
     const model  = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash-lite",
+      model: "gemini-1.5-flash",
       systemInstruction: AI_REPLY_SYSTEM,
     });
     const result = await model.generateContent(text);
     const reply  = result.response.text().trim();
-    if (!reply) return;
+    if (!reply) { console.warn("[AI-reply] Empty response from Gemini"); return; }
+
+    console.log(`[AI-reply] Sending reply to ${jid}: "${reply.slice(0, 80)}"`);
 
     // Human-like typing delay (1–2.5 s)
     await delay(1000 + Math.random() * 1500);
@@ -245,8 +252,8 @@ async function handleIncomingMessage(
     try { await sock.sendPresenceUpdate("paused", jid); } catch {}
     await delay(200);
     await sock.sendMessage(jid, { text: reply });
-  } catch {
-    // Silently swallow AI errors — never crash the bot
+  } catch (err: any) {
+    console.error("[AI-reply] Failed to generate/send reply:", err?.message ?? err);
   }
 }
 
@@ -319,7 +326,8 @@ export async function connectWhatsApp() {
 
     // ── Listen for incoming messages and reply with AI ────────────────────────
     sock.ev.on("messages.upsert", async ({ messages: msgs, type }) => {
-      if (type !== "notify") return;
+      // Accept both "notify" (real-time) and "append" (history sync) — don't filter by type
+      console.log(`[WA-msg] messages.upsert type=${type} count=${msgs.length}`);
       for (const msg of msgs) {
         if (!msg.message) continue;
         if (msg.key.fromMe) continue; // don't reply to own messages
@@ -331,19 +339,15 @@ export async function connectWhatsApp() {
           msg.message.conversation ??
           msg.message.extendedTextMessage?.text ??
           msg.message.imageMessage?.caption ??
+          msg.message.buttonsResponseMessage?.selectedDisplayText ??
           "";
+
+        console.log(`[WA-msg] From ${jid} | type=${type} | text="${text.slice(0, 60)}"`);
 
         if (!text.trim()) continue;
 
-        // For group chats, only reply if the bot is @mentioned OR it's a question
-        const isGroup = jid.endsWith("@g.us");
-        const botPhone = state.phone ?? "";
-        const mentionedJids: string[] = (msg.message.extendedTextMessage?.contextInfo?.mentionedJid as string[] | undefined) ?? [];
-        const isMentioned = botPhone && mentionedJids.some(j => j.startsWith(botPhone));
-        const isQuestion = /\?/.test(text) || /^(what|how|when|why|who|is|are|can|will|should|does|do)\b/i.test(text.trim());
-
-        if (isGroup && !isMentioned && !isQuestion) continue;
-
+        // Group chats: reply to any text message (AI decides what to say)
+        // DMs: always reply
         await handleIncomingMessage(sock, jid, text);
       }
     });
