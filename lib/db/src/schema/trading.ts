@@ -43,3 +43,18 @@ export const tradingPerformanceTable = pgTable("trading_performance", {
 });
 
 export type TradingPerformance = typeof tradingPerformanceTable.$inferSelect;
+
+export const brokersTable = pgTable("brokers", {
+  id: serial("id").primaryKey(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  logo: text("logo").notNull().default("🏦"),
+  category: text("category").notNull().default("both"),
+  referralLink: text("referral_link").notNull(),
+  commission: text("commission").notNull().default(""),
+  features: text("features").notNull().default("[]"),
+  isActive: text("is_active").notNull().default("true"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export type Broker = typeof brokersTable.$inferSelect;

@@ -343,6 +343,67 @@ export async function broadcastSignal(
   return { sent, total: active.length };
 }
 
+// ── WhatsApp Group Management ─────────────────────────────────────────────────
+function toJid(phone: string) {
+  return phone.replace(/[^0-9]/g, "") + "@s.whatsapp.net";
+}
+
+export async function createSignalGroup(name: string, phones: string[]) {
+  if (!state.sock || !state.connected) throw new Error("WhatsApp not connected");
+  const participants = phones.map(toJid);
+  const { id: groupJid } = await state.sock.groupCreate(name, participants);
+  state.groupJid  = groupJid;
+  state.groupName = name;
+  try {
+    const code = await state.sock.groupInviteCode(groupJid);
+    state.groupInviteCode = code;
+  } catch {}
+  return { groupJid, name, inviteCode: state.groupInviteCode };
+}
+
+export async function addToSignalGroup(phones: string[]) {
+  if (!state.sock || !state.connected) throw new Error("WhatsApp not connected");
+  if (!state.groupJid) throw new Error("No signal group created yet");
+  const participants = phones.map(toJid);
+  await state.sock.groupParticipantsUpdate(state.groupJid, participants, "add");
+  return { added: phones.length };
+}
+
+export async function removeFromSignalGroup(phones: string[]) {
+  if (!state.sock || !state.connected) throw new Error("WhatsApp not connected");
+  if (!state.groupJid) throw new Error("No signal group exists");
+  const participants = phones.map(toJid);
+  await state.sock.groupParticipantsUpdate(state.groupJid, participants, "remove");
+  return { removed: phones.length };
+}
+
+export async function getSignalGroupInfo() {
+  if (!state.groupJid || !state.sock || !state.connected) {
+    return { groupJid: null, name: null, inviteLink: null, size: 0, exists: false };
+  }
+  try {
+    const meta = await state.sock.groupMetadata(state.groupJid);
+    if (!state.groupInviteCode) {
+      try { state.groupInviteCode = await state.sock.groupInviteCode(state.groupJid); } catch {}
+    }
+    return {
+      exists: true,
+      groupJid: state.groupJid,
+      name: meta.subject ?? state.groupName,
+      size: meta.participants?.length ?? 0,
+      inviteLink: state.groupInviteCode ? `https://chat.whatsapp.com/${state.groupInviteCode}` : null,
+    };
+  } catch {
+    return { groupJid: state.groupJid, name: state.groupName, inviteLink: null, size: 0, exists: false };
+  }
+}
+
+export async function sendMessageToGroup(text: string) {
+  if (!state.sock || !state.connected) throw new Error("WhatsApp not connected");
+  if (!state.groupJid) throw new Error("No signal group created yet");
+  await state.sock.sendMessage(state.groupJid, { text });
+}
+
 export function disconnectWA() {
   try { state.sock?.logout(); } catch {}
   state.connected  = false;
@@ -350,4 +411,7 @@ export function disconnectWA() {
   state.phone      = null;
   state.sock       = null;
   state.connecting = false;
+  state.groupJid   = null;
+  state.groupName  = null;
+  state.groupInviteCode = null;
 }

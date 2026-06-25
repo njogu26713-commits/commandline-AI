@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { useTheme } from "next-themes";
-import { Moon, Sun, Zap, BarChart2, Users, Brain, Settings, LayoutDashboard } from "lucide-react";
+import { Moon, Sun, Zap, BarChart2, Users, Brain, Settings, ExternalLink } from "lucide-react";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
@@ -26,6 +26,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { href: "/dashboard",   label: "Analytics",   icon: BarChart2 },
     { href: "/deployments", label: "Subscribers", icon: Users },
     { href: "/ai-analyst",  label: "AI Analyst",  icon: Brain },
+    { href: "/brokers",     label: "Brokers",     icon: ExternalLink },
     { href: "/settings",    label: "Settings",    icon: Settings },
   ];
 

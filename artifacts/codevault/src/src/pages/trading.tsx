@@ -89,6 +89,28 @@ export default function Trading() {
   const [waStatus, setWaStatus] = useState<WAStatus>({ connected: false, qr: null, phone: null, connecting: false });
   const [showQr, setShowQr]     = useState(false);
   const [testingWA, setTestingWA] = useState(false);
+  const [creatingGroup, setCreatingGroup] = useState(false);
+
+  const { data: groupInfo, refetch: refetchGroup } = useQuery<{
+    exists: boolean; groupJid: string | null; name: string | null;
+    size: number; inviteLink: string | null;
+  }>({
+    queryKey: ["wa-group"],
+    queryFn: () => fetch("/api/whatsapp/groups/info").then(r => r.json()),
+    refetchInterval: 30000,
+    enabled: waStatus.connected,
+  });
+
+  const handleCreateGroup = async () => {
+    setCreatingGroup(true);
+    try {
+      const r = await fetch("/api/whatsapp/groups/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "CommandLine Signals 🔥" }) });
+      const d = await r.json();
+      if (!r.ok) { alert(d.error ?? "Failed to create group"); }
+      else { refetchGroup(); alert(`Group created! ${d.members} subscribers added.`); }
+    } catch { alert("Network error"); }
+    finally { setCreatingGroup(false); }
+  };
   const pollRef = useRef<any>(null);
 
   // Bot state — synced with server
@@ -493,6 +515,33 @@ export default function Trading() {
                 </Button>
               </div>
             </div>
+
+            {/* WhatsApp Group Management */}
+            {waStatus.connected && (
+              <div className="mt-3 pt-3 border-t border-border/60">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-muted-foreground">Signal Group</p>
+                    {groupInfo?.exists ? (
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <span className="text-xs font-medium text-green-500">{groupInfo.name}</span>
+                        <span className="text-[10px] text-muted-foreground">· {groupInfo.size} members</span>
+                        {groupInfo.inviteLink && (
+                          <a href={groupInfo.inviteLink} target="_blank" rel="noreferrer"
+                            className="text-[10px] text-primary underline underline-offset-2">Join link</a>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-[11px] text-muted-foreground mt-0.5">No group yet — create one to share signals</p>
+                    )}
+                  </div>
+                  <Button size="sm" variant="outline" onClick={handleCreateGroup} disabled={creatingGroup}
+                    className="text-xs flex-shrink-0 gap-1.5">
+                    {creatingGroup ? <><Loader2 className="w-3 h-3 animate-spin" /> Creating…</> : groupInfo?.exists ? "Recreate" : "Create Group"}
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -617,8 +666,8 @@ export default function Trading() {
                 <div className="flex items-center gap-2 text-xs text-indigo-400 py-2">
                   <Loader2 className="w-3 h-3 animate-spin" /> Running first market scan across all pairs…
                 </div>
-              ) : botLogs.map((log) => (
-                <div key={log.time} className={`flex items-start gap-2 px-2 py-1.5 rounded text-xs ${
+              ) : botLogs.map((log, i) => (
+                <div key={`${log.time}-${i}`} className={`flex items-start gap-2 px-2 py-1.5 rounded text-xs ${
                   log.type === "signal" ? "bg-green-500/10 border border-green-500/20 log-entry-signal" :
                   log.type === "skip"   ? "bg-yellow-500/10 border border-yellow-500/20 log-entry-skip" :
                   log.type === "error"  ? "bg-red-500/10 border border-red-500/20 log-entry-error" :

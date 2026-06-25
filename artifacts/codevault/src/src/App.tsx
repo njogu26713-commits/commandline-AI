@@ -12,6 +12,7 @@ import Deployments from "@/pages/deployments";
 import Trading from "@/pages/trading";
 import Profile from "@/pages/profile";
 import Settings from "@/pages/settings";
+import Brokers from "@/pages/brokers";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -31,6 +32,7 @@ function Router() {
       <Route path="/deployments" component={Deployments} />
       <Route path="/profile" component={Profile} />
       <Route path="/settings" component={Settings} />
+      <Route path="/brokers" component={Brokers} />
       <Route component={NotFound} />
     </Switch>
   );

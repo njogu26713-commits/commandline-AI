@@ -7,6 +7,10 @@ import {
   disconnectWA,
   getWAStatus,
   broadcastSignal,
+  createSignalGroup,
+  addToSignalGroup,
+  removeFromSignalGroup,
+  getSignalGroupInfo,
 } from "../services/whatsapp.js";
 
 const router = Router();
@@ -78,6 +82,53 @@ router.post("/whatsapp/broadcast", async (req, res) => {
   } catch (err: any) {
     req.log.error(err);
     res.status(500).json({ error: err.message ?? "Broadcast failed" });
+  }
+});
+
+// ── WhatsApp Group routes ─────────────────────────────────────────────────────
+router.get("/whatsapp/groups/info", async (_req, res) => {
+  try {
+    const info = await getSignalGroupInfo();
+    res.json(info);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message ?? "Failed to get group info" });
+  }
+});
+
+router.post("/whatsapp/groups/create", async (req, res) => {
+  try {
+    const status = getWAStatus();
+    if (!status.connected) return res.status(400).json({ error: "WhatsApp not connected" });
+    const name = req.body.name ?? "CommandLine Signals 🔥";
+    const allSubs = await db.select().from(subscribersTable).where(eq(subscribersTable.status, "active"));
+    const phones = allSubs.map(s => s.phone);
+    if (phones.length === 0) return res.status(400).json({ error: "No active subscribers to add to the group" });
+    const result = await createSignalGroup(name, phones);
+    res.json({ ...result, members: phones.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message ?? "Group creation failed" });
+  }
+});
+
+router.post("/whatsapp/groups/add", async (req, res) => {
+  try {
+    const { phones } = req.body;
+    if (!phones?.length) return res.status(400).json({ error: "phones array is required" });
+    const result = await addToSignalGroup(phones);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message ?? "Failed to add members" });
+  }
+});
+
+router.post("/whatsapp/groups/remove", async (req, res) => {
+  try {
+    const { phones } = req.body;
+    if (!phones?.length) return res.status(400).json({ error: "phones array is required" });
+    const result = await removeFromSignalGroup(phones);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message ?? "Failed to remove members" });
   }
 });
 
