@@ -316,28 +316,39 @@ async function scanOnce() {
     return;
   }
 
+  const signalCategory = "crypto"; // bot currently scans crypto pairs
   try {
     const subs = await db.select().from(subscribersTable).where(eq(subscribersTable.status, "active"));
-    const targets = subs.filter(s => s.signalType === "both" || s.signalType === "crypto");
+    // Send to subscribers whose signalType matches — "both" always receives, others only if category matches
+    const targets = subs.filter(s => {
+      const t = s.signalType ?? "both";
+      return t === "both" || t === signalCategory;
+    });
 
     if (targets.length === 0) {
-      addLog("📭 Signal saved — WhatsApp connected but no active subscribers yet", "info");
+      addLog(`📭 Signal saved — no active subscribers for ${signalCategory} signals`, "info");
       return;
     }
 
-    addLog(`📲 Broadcasting to ${targets.length} subscriber${targets.length !== 1 ? "s" : ""} via WhatsApp…`, "info");
+    addLog(`📲 Broadcasting to ${targets.length}/${subs.length} subscriber${targets.length !== 1 ? "s" : ""} (${signalCategory} filter)…`, "info");
     const messages = buildMessages(best);
     let sent = 0;
     for (const sub of targets) {
+      if (!getWAStatus().connected) {
+        addLog(`⚠ WhatsApp disconnected mid-broadcast — ${sent}/${targets.length} delivered so far`, "error");
+        break;
+      }
       try {
-        await sendTypingMessages(sub.phone, messages, 3000);
-        await new Promise(r => setTimeout(r, 1500));
+        await sendTypingMessages(sub.phone, messages, 700);
+        await new Promise(r => setTimeout(r, 800));
         sent++;
+        addLog(`✔ Delivered to ${sub.name} (+${sub.phone})`, "info");
       } catch (e: any) {
-        addLog(`⚠ Failed to send to +${sub.phone}: ${e?.message ?? "unknown"}`, "error");
+        addLog(`⚠ Failed → ${sub.name} (+${sub.phone}): ${e?.message ?? "unknown"}`, "error");
+        await new Promise(r => setTimeout(r, 500));
       }
     }
-    addLog(`✅ Broadcast complete — signal delivered to ${sent}/${targets.length} subscriber${targets.length !== 1 ? "s" : ""}`, "signal");
+    addLog(`✅ Broadcast complete — ${sent}/${targets.length} delivered`, sent === targets.length ? "signal" : "error");
   } catch (e: any) {
     addLog(`❌ Broadcast error: ${e?.message ?? "unknown"}`, "error");
   }

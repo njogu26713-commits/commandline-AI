@@ -285,24 +285,22 @@ export async function sendWAMessage(phone: string, message: string) {
   await state.sock.sendMessage(jid, { text: message });
 }
 
-// Send multiple messages with typing indicator between each — feels human
+// Send multiple messages with typing indicator — feels human, stays fast
 export async function sendTypingMessages(
   phone: string,
   messages: string[],
-  typingMs = 3000,
+  typingMs = 700,
 ) {
   if (!state.sock || !state.connected) throw new Error("WhatsApp not connected");
   const jid = phone.replace(/[^0-9]/g, "") + "@s.whatsapp.net";
   for (let i = 0; i < messages.length; i++) {
-    // Show "typing…"
-    await state.sock.sendPresenceUpdate("composing", jid);
+    if (!state.connected) throw new Error("WhatsApp disconnected mid-send");
+    try { await state.sock.sendPresenceUpdate("composing", jid); } catch {} // non-fatal
     await delay(typingMs);
-    // Stop typing then send
-    await state.sock.sendPresenceUpdate("paused", jid);
-    await delay(200);
+    try { await state.sock.sendPresenceUpdate("paused", jid); } catch {}
+    await delay(150);
     await state.sock.sendMessage(jid, { text: messages[i] });
-    // Brief pause between messages so subscriber can read
-    if (i < messages.length - 1) await delay(1500);
+    if (i < messages.length - 1) await delay(800);
   }
 }
 
@@ -327,20 +325,28 @@ export async function broadcastSignal(
   const active   = subscribers.filter((s) => s.status === "active");
   let sent = 0;
 
+  const failed: string[] = [];
   for (const sub of active) {
+    if (!state.connected) {
+      console.warn(`[broadcast] WhatsApp disconnected — skipping remaining ${active.length - sent - failed.length} subscriber(s)`);
+      break;
+    }
     try {
       for (let i = 0; i < messages.length; i++) {
         await sendWAMessage(sub.phone, messages[i]);
-        if (i < messages.length - 1) await delay(1200); // 1.2s between each message
+        if (i < messages.length - 1) await delay(800);
       }
       sent++;
-      await delay(1000); // 1s between subscribers
-    } catch {
-      // continue on failure
+      await delay(800);
+    } catch (err: any) {
+      failed.push(sub.phone);
+      console.error(`[broadcast] Failed to send to +${sub.phone} (${sub.name}): ${err?.message ?? err}`);
+      await delay(500); // brief pause before next subscriber
     }
   }
 
-  return { sent, total: active.length };
+  if (failed.length > 0) console.warn(`[broadcast] ${failed.length} failed: ${failed.join(", ")}`);
+  return { sent, total: active.length, failed: failed.length };
 }
 
 // ── WhatsApp Group Management ─────────────────────────────────────────────────
