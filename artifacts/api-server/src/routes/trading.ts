@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { tradingSignalsTable, subscribersTable, tradingPerformanceTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { getMarketData, getKlines, buildMarketContext } from "../services/binance.js";
-import { getWAStatus, broadcastSignal, sendMessageToGroup, getSignalGroupInfo } from "../services/whatsapp.js";
+import { getWAStatus, broadcastSignal, sendMessageToGroup, sendTypingMessagesToGroup, buildGroupSignalMessages, getSignalGroupInfo } from "../services/whatsapp.js";
 
 const router = Router();
 
@@ -215,24 +215,15 @@ async function saveAndBroadcast(signal: {
       broadcast = { sent: 0, failed: 0, skipped: false };
     }
 
-    // ── Notify group: signal sent to DMs, wait there ─────────────────────────
+    // ── Notify group: human-style multi-message notification ─────────────────
     try {
       const groupInfo = await getSignalGroupInfo();
       if (groupInfo.exists) {
-        const now = new Date().toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Nairobi" });
-        const inviteLine = groupInfo.inviteLink ? `\n🔗 *Not in the group yet?* Join → ${groupInfo.inviteLink}` : "";
-        const groupMsg = [
-          `🔔 *New Signal Just Dropped!*`,
-          ``,
-          `Hey fam! 👋 A fresh *${signal.pair} ${signal.direction}* signal has just been sent to your personal DMs.`,
-          ``,
-          `📲 *Check your private messages from the bot* — full entry, take profit targets, and stop loss details are there.`,
-          ``,
-          `⏰ ${now} EAT  |  📊 Confidence: *${signal.confidence}%*  |  Risk: *${signal.riskLevel}*`,
-          ``,
-          `_Signals are delivered privately to protect your trading edge. Follow the plan! 💪_${inviteLine}`,
-        ].join("\n");
-        await sendMessageToGroup(groupMsg);
+        const groupMsgs = buildGroupSignalMessages(
+          { pair: signal.pair, direction: signal.direction, confidence: signal.confidence, riskLevel: signal.riskLevel },
+          groupInfo.inviteLink,
+        );
+        await sendTypingMessagesToGroup(groupMsgs);
       }
     } catch {}
   }

@@ -539,6 +539,56 @@ export async function sendMessageToGroup(text: string) {
   await state.sock.sendMessage(state.groupJid, { text });
 }
 
+// Send multiple short messages to the group with human-like typing delays
+export async function sendTypingMessagesToGroup(messages: string[], typingMs = 1200) {
+  if (!state.sock || !state.connected) throw new Error("WhatsApp not connected");
+  if (!state.groupJid) throw new Error("No signal group created yet");
+  for (let i = 0; i < messages.length; i++) {
+    if (!state.connected) throw new Error("WhatsApp disconnected mid-send");
+    const jid = state.groupJid;
+    // Show typing indicator for a natural-feeling duration
+    try { await state.sock.sendPresenceUpdate("composing", jid); } catch {}
+    await delay(typingMs + Math.floor(Math.random() * 600));
+    try { await state.sock.sendPresenceUpdate("paused", jid); } catch {}
+    await delay(180 + Math.floor(Math.random() * 120));
+    await state.sock.sendMessage(jid, { text: messages[i] });
+    // Pause between messages like a human would
+    if (i < messages.length - 1) await delay(700 + Math.floor(Math.random() * 500));
+  }
+}
+
+// Build short, human-style group notification messages for a signal
+export function buildGroupSignalMessages(signal: {
+  pair: string;
+  direction: string;
+  confidence: number;
+  riskLevel?: string;
+}, inviteLink?: string | null): string[] {
+  const dir       = signal.direction;
+  const emoji     = dir === "BUY" ? "🟢" : "🔴";
+  const risk      = signal.riskLevel ?? "Medium";
+  const confTier  = signal.confidence >= 82 ? "very strong 💎" : signal.confidence >= 72 ? "solid 📊" : "decent 👀";
+  const openers   = [
+    `👀 *${signal.pair} just lit up...*`,
+    `🚨 *Signal alert!* Something good just came in`,
+    `⚡ Our AI just confirmed a setup on *${signal.pair}*`,
+    `🔔 *New trade just dropped* — ${signal.pair}`,
+  ];
+  const opener = openers[Math.floor(Math.random() * openers.length)];
+
+  const msgs = [
+    opener,
+    `${emoji} *${signal.pair} ${dir}* — ${confTier} setup\n📊 Confidence: *${signal.confidence}%* | Risk: *${risk}*`,
+    `📲 Full signal details (entry, TP1, TP2 & stop loss) have been sent straight to your DMs.\n\nCheck your private messages from the bot now — don't miss the move! 👇`,
+  ];
+
+  if (inviteLink) {
+    msgs.push(`Not in the VIP list yet? You're missing out 😅\nJoin here 👇\n${inviteLink}`);
+  }
+
+  return msgs;
+}
+
 export function disconnectWA() {
   try { state.sock?.logout(); } catch {}
   state.connected  = false;

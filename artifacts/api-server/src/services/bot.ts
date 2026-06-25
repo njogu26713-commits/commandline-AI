@@ -2,7 +2,7 @@ import { db } from "@workspace/db";
 import { tradingSignalsTable, subscribersTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { getDeepAnalysis, getForexRate } from "./binance.js";
-import { sendTypingMessages, getWAStatus, sendMessageToGroup, getSignalGroupInfo } from "./whatsapp.js";
+import { sendTypingMessages, getWAStatus, sendMessageToGroup, sendTypingMessagesToGroup, buildGroupSignalMessages, getSignalGroupInfo } from "./whatsapp.js";
 import { logger } from "../lib/logger.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -464,25 +464,16 @@ async function scanOnce() {
     }
     addLog(`✅ Broadcast complete — ${sent}/${targets.length} delivered`, sent === targets.length ? "signal" : "error");
 
-    // ── Notify group: signal sent to DMs, wait there ─────────────────────────
+    // ── Notify group: human-style multi-message notification ─────────────────
     try {
       const groupInfo = await getSignalGroupInfo();
       if (groupInfo.exists) {
-        const now = new Date().toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Nairobi" });
-        const inviteLine = groupInfo.inviteLink ? `\n🔗 *Not in the group yet?* Join → ${groupInfo.inviteLink}` : "";
-        const groupMsg = [
-          `🔔 *New Signal Just Dropped!*`,
-          ``,
-          `Hey fam! 👋 A fresh *${best.pair} ${best.direction}* signal has just been sent to your personal DMs.`,
-          ``,
-          `📲 *Check your private messages from the bot* — you'll find the full entry price, take profit targets, and stop loss levels there.`,
-          ``,
-          `⏰ ${now} EAT  |  📊 Confidence: *${best.confidence}%*  |  Risk: *${best.riskLevel}*`,
-          ``,
-          `_Signals are delivered privately to protect your trading edge. Follow the plan and manage your risk! 💪_${inviteLine}`,
-        ].join("\n");
-        await sendMessageToGroup(groupMsg);
-        addLog(`📢 Group notified — members told to check DMs for the ${best.pair} signal`, "info");
+        const groupMsgs = buildGroupSignalMessages(
+          { pair: best.pair, direction: best.direction, confidence: best.confidence, riskLevel: best.riskLevel },
+          groupInfo.inviteLink,
+        );
+        await sendTypingMessagesToGroup(groupMsgs);
+        addLog(`📢 Group notified (${groupMsgs.length} messages) — members told to check DMs for the ${best.pair} signal`, "info");
       }
     } catch (e: any) {
       addLog(`⚠ Group notification failed: ${e?.message ?? "unknown"}`, "error");
