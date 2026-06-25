@@ -212,6 +212,63 @@ Your role in this group/chat:
 - Be encouraging, hype the community, and keep the vibe professional but fun.
 - Do NOT reveal that you are Gemini or Google AI. You are "CommandLine AI".`;
 
+// ── Smart fallback replies when Gemini is unavailable ────────────────────────
+function getFallbackReply(text: string): string {
+  const t = text.toLowerCase();
+
+  if (/\b(hi|hello|hey|hola|sup|yo|good\s*(morning|afternoon|evening|night))\b/.test(t))
+    return pick([
+      "👋 Hey! Welcome to CommandLine Signals. Ask me anything about the service or trading signals! 🚀",
+      "🤖 Hello! CommandLine AI here. How can I help you today? 📈",
+      "Hey there! 👋 Drop your question and I'll get you sorted. Let's get these pips! 💰",
+    ]);
+
+  if (/\b(signal|trade|entry|tp|sl|take\s*profit|stop\s*loss|buy|sell)\b/.test(t))
+    return pick([
+      "📡 Signals are sent directly to your DMs with full Entry, TP, and SL details. Check your personal messages! 🎯",
+      "🔔 Your signal details (Entry, TP, SL) are delivered to your private DMs from the bot — check there! 📲",
+      "💡 All active signals with prices are sent privately. Check your DMs for the full breakdown! 🚀",
+    ]);
+
+  if (/\b(how|work|start|begin|new|join|subscribe|subscription)\b/.test(t))
+    return pick([
+      "🚀 CommandLine Signals delivers AI-powered BUY/SELL signals for crypto & forex straight to WhatsApp. Ask your admin to add you as a subscriber!",
+      "📲 We send trading signals with Entry, TP & SL directly to your WhatsApp. Contact the admin to subscribe! 💰",
+    ]);
+
+  if (/\b(win|accuracy|profit|performance|result|success|rate)\b/.test(t))
+    return pick([
+      "📊 Our AI analyzes live market data to generate high-confidence signals. Check the dashboard for live win rate stats! 🎯",
+      "🤖 CommandLine AI tracks performance in real-time. Ask your admin for the latest stats — we keep it transparent! 📈",
+    ]);
+
+  if (/\b(risk|manage|safe|money|capital|loss)\b/.test(t))
+    return pick([
+      "🛡️ Every signal comes with a Stop Loss — always use it! Risk max 1-2% of your capital per trade. Protect the bag! 💎",
+      "⚠️ Risk management is key. We include SL on every signal. Never risk more than you can afford to lose! 🧠",
+    ]);
+
+  if (/\b(forex|crypto|bitcoin|btc|eth|gold|xau|gbp|eur|usd)\b/.test(t))
+    return pick([
+      "📡 We cover crypto & forex markets — BTC, ETH, Gold, EUR/USD and more. Full signal details in your DMs! 🚀",
+      "🌍 CommandLine AI monitors crypto and major forex pairs 24/7. Check your DMs for the latest signals! 📈",
+    ]);
+
+  if (/\b(thank|thanks|thx|appreciate|great|awesome|nice|good\s*job)\b/.test(t))
+    return pick([
+      "😤 We move! Thanks for the love — let's keep stacking pips together! 💪📈",
+      "🙌 Appreciate it! Stay locked in and let the signals do the work. 🚀",
+      "💎 Always! That's what CommandLine Signals is here for. Let's get it! ⚡",
+    ]);
+
+  // Generic catch-all
+  return pick([
+    "🤖 CommandLine AI here! Ask me about signals, trading tips, or how the service works. 📈",
+    "💡 I'm CommandLine AI — your trading assistant. Ask about signals, risk management, or market info! 🚀",
+    "📡 Got a trading question? I'm here to help! Ask about signals, entries, or risk management. 🎯",
+  ]);
+}
+
 async function handleIncomingMessage(
   sock: ReturnType<typeof makeWASocket>,
   jid: string,
@@ -226,42 +283,52 @@ async function handleIncomingMessage(
   if ((replyCooldowns.get(cooldownKey) ?? 0) + 15_000 > now) return;
   replyCooldowns.set(cooldownKey, now);
 
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    console.warn("[AI-reply] No GEMINI_API_KEY set — skipping reply");
-    return;
-  }
-
   console.log(`[AI-reply] Generating reply for jid=${jid} text="${text.slice(0, 80)}"`);
 
-  try {
-    const { GoogleGenerativeAI } = await import("@google/generative-ai");
-    const genAI  = new GoogleGenerativeAI(apiKey);
-    const model  = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
-      systemInstruction: AI_REPLY_SYSTEM,
-    });
-    const result = await model.generateContent(text);
-    const reply  = result.response.text().trim();
-    if (!reply) { console.warn("[AI-reply] Empty response from Gemini"); return; }
+  let reply = "";
 
-    console.log(`[AI-reply] Sending reply to ${jid}: "${reply.slice(0, 80)}"`);
-
-    // Human-like typing delay (1–2.5 s)
-    await delay(1000 + Math.random() * 1500);
-    try { await sock.sendPresenceUpdate("composing", jid); } catch {}
-    await delay(800);
-    try { await sock.sendPresenceUpdate("paused", jid); } catch {}
-    await delay(200);
-
-    // In groups, quote-reply so the member knows the AI is talking to them
-    const sendOpts: any = { text: reply };
-    if (originalMsg?.key && jid.endsWith("@g.us")) {
-      sendOpts.quoted = originalMsg;
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (apiKey) {
+    try {
+      const { GoogleGenerativeAI } = await import("@google/generative-ai");
+      const genAI  = new GoogleGenerativeAI(apiKey);
+      const model  = genAI.getGenerativeModel({
+        model: "gemini-2.0-flash",
+        systemInstruction: AI_REPLY_SYSTEM,
+      });
+      const result = await model.generateContent(text);
+      reply = result.response.text().trim();
+      console.log(`[AI-reply] Gemini reply: "${reply.slice(0, 80)}"`);
+    } catch (err: any) {
+      console.warn("[AI-reply] Gemini failed, using fallback:", err?.message?.slice(0, 120));
     }
+  } else {
+    console.warn("[AI-reply] No GEMINI_API_KEY — using fallback reply");
+  }
+
+  // Use fallback if Gemini failed or returned empty
+  if (!reply) {
+    reply = getFallbackReply(text);
+    console.log(`[AI-reply] Fallback reply: "${reply.slice(0, 80)}"`);
+  }
+
+  // Human-like typing delay (1–2.5 s)
+  await delay(1000 + Math.random() * 1500);
+  try { await sock.sendPresenceUpdate("composing", jid); } catch {}
+  await delay(800);
+  try { await sock.sendPresenceUpdate("paused", jid); } catch {}
+  await delay(200);
+
+  // In groups, quote-reply so the member knows the AI is talking to them
+  const sendOpts: any = { text: reply };
+  if (originalMsg?.key && jid.endsWith("@g.us")) {
+    sendOpts.quoted = originalMsg;
+  }
+  try {
     await sock.sendMessage(jid, sendOpts);
+    console.log(`[AI-reply] Sent reply to ${jid}`);
   } catch (err: any) {
-    console.error("[AI-reply] Failed to generate/send reply:", err?.message ?? err);
+    console.error("[AI-reply] Failed to send reply:", err?.message ?? err);
   }
 }
 
