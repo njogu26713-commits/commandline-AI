@@ -2,7 +2,7 @@ import { db } from "@workspace/db";
 import { tradingSignalsTable, subscribersTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { getDeepAnalysis } from "./binance.js";
-import { sendTypingMessages, getWAStatus } from "./whatsapp.js";
+import { sendTypingMessages, getWAStatus, sendMessageToGroup, getSignalGroupInfo } from "./whatsapp.js";
 import { logger } from "../lib/logger.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -349,6 +349,29 @@ async function scanOnce() {
       }
     }
     addLog(`✅ Broadcast complete — ${sent}/${targets.length} delivered`, sent === targets.length ? "signal" : "error");
+
+    // ── Notify group: signal sent to DMs, wait there ─────────────────────────
+    try {
+      const groupInfo = await getSignalGroupInfo();
+      if (groupInfo.exists) {
+        const now = new Date().toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Nairobi" });
+        const groupMsg = [
+          `🔔 *New Signal Just Dropped!*`,
+          ``,
+          `Hey fam! 👋 A fresh *${best.pair} ${best.direction}* signal has just been sent to your personal DMs.`,
+          ``,
+          `📲 *Check your private messages from the bot* — you'll find the full entry price, take profit targets, and stop loss levels there.`,
+          ``,
+          `⏰ ${now} EAT  |  📊 Confidence: *${best.confidence}%*  |  Risk: *${best.riskLevel}*`,
+          ``,
+          `_Signals are delivered privately to protect your trading edge. Follow the plan and manage your risk! 💪_`,
+        ].join("\n");
+        await sendMessageToGroup(groupMsg);
+        addLog(`📢 Group notified — members told to check DMs for the ${best.pair} signal`, "info");
+      }
+    } catch (e: any) {
+      addLog(`⚠ Group notification failed: ${e?.message ?? "unknown"}`, "error");
+    }
   } catch (e: any) {
     addLog(`❌ Broadcast error: ${e?.message ?? "unknown"}`, "error");
   }

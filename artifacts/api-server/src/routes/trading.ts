@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { tradingSignalsTable, subscribersTable, tradingPerformanceTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { getMarketData, getKlines, buildMarketContext } from "../services/binance.js";
-import { getWAStatus, broadcastSignal } from "../services/whatsapp.js";
+import { getWAStatus, broadcastSignal, sendMessageToGroup, getSignalGroupInfo } from "../services/whatsapp.js";
 
 const router = Router();
 
@@ -41,6 +41,37 @@ router.patch("/trading/signals/:id", async (req, res) => {
     const { status, pnl } = req.body;
     const [signal] = await db.update(tradingSignalsTable).set({ status, pnl }).where(eq(tradingSignalsTable.id, id)).returning();
     if (!signal) return res.status(404).json({ error: "Signal not found" });
+
+    // ── Post signal result to the group ──────────────────────────────────────
+    if ((status === "won" || status === "lost") && getWAStatus().connected) {
+      try {
+        const groupInfo = await getSignalGroupInfo();
+        if (groupInfo.exists) {
+          const pnlStr = pnl != null ? ` (*${pnl > 0 ? "+" : ""}${pnl}%*)` : "";
+          const resultMsg = status === "won"
+            ? [
+                `✅ *Signal Result: WIN!* 🎉`,
+                ``,
+                `📊 *${signal.pair} ${signal.direction}* hit its target${pnlStr}`,
+                ``,
+                `🏆 Another one in the bag! Stay disciplined and keep following your risk management.`,
+                ``,
+                `_Next signal is being analysed. Keep notifications on! 🔔_`,
+              ].join("\n")
+            : [
+                `🛑 *Signal Result: Stopped Out*`,
+                ``,
+                `📊 *${signal.pair} ${signal.direction}* hit the stop loss${pnlStr}`,
+                ``,
+                `🛡️ Losses are part of trading. Your stop loss protected your capital — that's the plan working exactly as it should.`,
+                ``,
+                `_Stay patient. Next high-probability setup is being scanned. 💪_`,
+              ].join("\n");
+          await sendMessageToGroup(resultMsg);
+        }
+      } catch {}
+    }
+
     res.json({ ...signal, createdAt: signal.createdAt.toISOString() });
   } catch (err) {
     req.log.error(err);
@@ -183,6 +214,26 @@ async function saveAndBroadcast(signal: {
     } else {
       broadcast = { sent: 0, failed: 0, skipped: false };
     }
+
+    // ── Notify group: signal sent to DMs, wait there ─────────────────────────
+    try {
+      const groupInfo = await getSignalGroupInfo();
+      if (groupInfo.exists) {
+        const now = new Date().toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Nairobi" });
+        const groupMsg = [
+          `🔔 *New Signal Just Dropped!*`,
+          ``,
+          `Hey fam! 👋 A fresh *${signal.pair} ${signal.direction}* signal has just been sent to your personal DMs.`,
+          ``,
+          `📲 *Check your private messages from the bot* — full entry, take profit targets, and stop loss details are there.`,
+          ``,
+          `⏰ ${now} EAT  |  📊 Confidence: *${signal.confidence}%*  |  Risk: *${signal.riskLevel}*`,
+          ``,
+          `_Signals are delivered privately to protect your trading edge. Follow the plan! 💪_`,
+        ].join("\n");
+        await sendMessageToGroup(groupMsg);
+      }
+    } catch {}
   }
 
   return { saved, broadcast };
