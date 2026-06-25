@@ -216,13 +216,15 @@ async function handleIncomingMessage(
   sock: ReturnType<typeof makeWASocket>,
   jid: string,
   text: string,
+  originalMsg?: any,
 ) {
   if (!text?.trim()) return;
 
-  // 15-second cooldown per chat to avoid rapid-fire replies
+  // 15-second cooldown per sender (group member or DM) to avoid rapid-fire replies
+  const cooldownKey = originalMsg?.key?.participant ?? jid;
   const now = Date.now();
-  if ((replyCooldowns.get(jid) ?? 0) + 15_000 > now) return;
-  replyCooldowns.set(jid, now);
+  if ((replyCooldowns.get(cooldownKey) ?? 0) + 15_000 > now) return;
+  replyCooldowns.set(cooldownKey, now);
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
@@ -236,7 +238,7 @@ async function handleIncomingMessage(
     const { GoogleGenerativeAI } = await import("@google/generative-ai");
     const genAI  = new GoogleGenerativeAI(apiKey);
     const model  = genAI.getGenerativeModel({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.0-flash-lite",
       systemInstruction: AI_REPLY_SYSTEM,
     });
     const result = await model.generateContent(text);
@@ -251,7 +253,13 @@ async function handleIncomingMessage(
     await delay(800);
     try { await sock.sendPresenceUpdate("paused", jid); } catch {}
     await delay(200);
-    await sock.sendMessage(jid, { text: reply });
+
+    // In groups, quote-reply so the member knows the AI is talking to them
+    const sendOpts: any = { text: reply };
+    if (originalMsg?.key && jid.endsWith("@g.us")) {
+      sendOpts.quoted = originalMsg;
+    }
+    await sock.sendMessage(jid, sendOpts);
   } catch (err: any) {
     console.error("[AI-reply] Failed to generate/send reply:", err?.message ?? err);
   }
@@ -358,9 +366,9 @@ export async function connectWhatsApp() {
 
         if (!text.trim()) continue;
 
-        // Group chats: reply to any text message (AI decides what to say)
+        // Group chats: quote-reply to the member's message so it's clear who AI is talking to
         // DMs: always reply
-        await handleIncomingMessage(sock, jid, text);
+        await handleIncomingMessage(sock, jid, text, msg);
       }
     });
   } catch (err) {
