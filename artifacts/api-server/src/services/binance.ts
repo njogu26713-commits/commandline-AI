@@ -285,7 +285,7 @@ ${candlePattern}
 export async function getDeepAnalysis(pair: string, category: "crypto" | "forex" = "crypto") {
   const [ticker, klines1h, klines4h, klines15m] = await Promise.all([
     getMarketData(pair, category),
-    getKlines(pair, "1h", 100),
+    getKlines(pair, "1h", 100).catch(() => [] as Kline[]),
     getKlines(pair, "4h", 60).catch(() => [] as Kline[]),
     getKlines(pair, "15m", 60).catch(() => [] as Kline[]),
   ]);

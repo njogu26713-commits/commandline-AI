@@ -1,7 +1,7 @@
 import { db } from "@workspace/db";
 import { tradingSignalsTable, subscribersTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
-import { getDeepAnalysis } from "./binance.js";
+import { getDeepAnalysis, getForexRate } from "./binance.js";
 import { sendTypingMessages, getWAStatus, sendMessageToGroup, getSignalGroupInfo } from "./whatsapp.js";
 import { logger } from "../lib/logger.js";
 
@@ -44,7 +44,7 @@ let state: BotState = {
   active: false,
   mode: "balanced",
   intervalMinutes: 5,
-  pairs: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "DOGEUSDT", "ADAUSDT"],
+  pairs: ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT", "EURUSD", "GBPUSD", "XAUUSD"],
   lastSignalAt: null,
   lastScanAt: null,
   signalsToday: 0,
@@ -83,7 +83,119 @@ async function getRecentSignals(limit = 10) {
   } catch { return []; }
 }
 
-// ── Deep analysis + Gemini signal for ONE pair ────────────────────────────────
+// ── Pair type detection ───────────────────────────────────────────────────────
+function isForexPair(pair: string): boolean {
+  const clean = pair.replace(/[\/\-]/g, "").toUpperCase();
+  return !["USDT", "USDC", "BTC", "ETH", "BNB"].some(s => clean.endsWith(s));
+}
+
+// ── Forex-specific analysis (price from exchange rate API, Gemini analysis) ───
+async function analyzeForexPair(pair: string, apiKey: string | undefined): Promise<ScoredSignal | null> {
+  try {
+    addLog(`📡 Fetching live forex rate for ${pair}…`, "info");
+    const ticker = await getForexRate(pair);
+    const range  = ticker.high24h - ticker.low24h;
+    const atr    = range > 0 ? range / 2 : ticker.price * 0.005;
+    const pricePos = range > 0 ? (ticker.price - ticker.low24h) / range : 0.5;
+    const bias: "BUY" | "SELL" = pricePos < 0.4 ? "BUY" : "SELL";
+
+    addLog(`📊 ${pair} — Rate: ${ticker.price.toFixed(5)} | 24h: ${ticker.low24h.toFixed(5)}–${ticker.high24h.toFixed(5)} | Position: ${(pricePos * 100).toFixed(0)}% of range | Bias: ${bias}`, "info");
+
+    if (apiKey) {
+      try {
+        const minConf = state.mode === "conservative" ? 78 : state.mode === "balanced" ? 70 : 62;
+        const history = await getSignalHistory(pair, 5);
+        const histSummary = history.length > 0
+          ? history.map(h => `${h.direction} @ ${h.entryPrice} → ${h.status}${h.pnl ? ` (PNL: ${h.pnl}%)` : ""}`).join("; ")
+          : "No recent history for this pair";
+
+        const { GoogleGenerativeAI } = await import("@google/generative-ai");
+        const genAI = new GoogleGenerativeAI(apiKey);
+        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
+
+        const prompt = `You are an elite autonomous forex signal engine for CommandLine Signals.
+
+PAIR: ${pair}
+CURRENT RATE: ${ticker.price.toFixed(5)}
+24H HIGH: ${ticker.high24h.toFixed(5)}
+24H LOW:  ${ticker.low24h.toFixed(5)}
+24H RANGE: ${range.toFixed(5)} (${((range / ticker.price) * 100).toFixed(3)}%)
+PRICE POSITION IN RANGE: ${(pricePos * 100).toFixed(0)}% from low
+TREND BIAS: ${bias} (price near ${pricePos < 0.4 ? "daily low — potential reversal up" : pricePos > 0.6 ? "daily high — potential reversal down" : "mid-range"})
+ATR PROXY (half daily range): ${atr.toFixed(5)}
+Recent signals: ${histSummary}
+
+Generate a high-probability forex signal. Min confidence: ${minConf}%.
+If NO clear setup, return {"skip":true,"reason":"..."}
+
+Respond ONLY with valid JSON:
+{"skip":false,"direction":"BUY","entryPrice":${ticker.price},"targetPrice":0,"targetPrice2":0,"stopLoss":0,"confidence":72,"riskLevel":"Medium","reasoning":"<2-3 sentences>"}`;
+
+        const result = await model.generateContent(prompt);
+        const text = result.response.text().trim();
+        const match = text.match(/\{[\s\S]*?\}/);
+        if (!match) throw new Error("No JSON in response");
+        const parsed = JSON.parse(match[0]);
+
+        if (parsed.skip) {
+          addLog(`⏭ ${pair} — Gemini Forex: ${parsed.reason ?? "no high-probability setup"}`, "skip");
+          return null;
+        }
+
+        const direction = parsed.direction as "BUY" | "SELL";
+        const entry = parseFloat(parsed.entryPrice);
+        const tp1   = parseFloat(parsed.targetPrice);
+        const tp2   = parseFloat(parsed.targetPrice2) || (direction === "BUY" ? entry + atr * 2.5 : entry - atr * 2.5);
+        const sl    = parseFloat(parsed.stopLoss);
+
+        if (isNaN(entry) || isNaN(tp1) || isNaN(sl)) throw new Error("Invalid prices from Gemini");
+
+        addLog(`✅ ${pair} — Gemini Forex: ${direction} @ ${entry.toFixed(5)} | Confidence: ${parsed.confidence}% | R/R: ${(Math.abs(tp1 - entry) / Math.abs(entry - sl)).toFixed(1)}:1`, "signal");
+
+        return {
+          pair, direction,
+          confidence: Math.min(Math.round(parsed.confidence), 94),
+          entryPrice: entry, targetPrice: tp1, targetPrice2: tp2, stopLoss: sl,
+          riskLevel: parsed.riskLevel ?? "Medium",
+          reasoning: parsed.reasoning ?? "",
+          taScore: 6,
+        };
+      } catch (e: any) {
+        const isQuota = e?.status === 429;
+        addLog(`⚠ ${pair} — Gemini Forex ${isQuota ? "quota reached" : `error: ${e?.message ?? "unknown"}`} — using range fallback`, isQuota ? "skip" : "error");
+      }
+    }
+
+    // ── Range-based fallback for forex ──────────────────────────────────────
+    const minConf = state.mode === "conservative" ? 78 : state.mode === "balanced" ? 68 : 60;
+    const conf = pricePos < 0.25 || pricePos > 0.75 ? 68 : 58;
+    if (conf < minConf) {
+      addLog(`⏭ ${pair} — Forex range confidence ${conf}% below minimum ${minConf}% — skipping`, "skip");
+      return null;
+    }
+
+    const dir   = bias;
+    const entry = ticker.price;
+    const tp1   = dir === "BUY" ? entry + atr * 1.5 : entry - atr * 1.5;
+    const tp2   = dir === "BUY" ? entry + atr * 2.5 : entry - atr * 2.5;
+    const sl    = dir === "BUY" ? entry - atr       : entry + atr;
+
+    addLog(`📈 ${pair} — Forex range signal: ${dir} @ ${entry.toFixed(5)} | Conf: ${conf}% (range-based)`, "signal");
+
+    return {
+      pair, direction: dir, confidence: conf,
+      entryPrice: entry, targetPrice: tp1, targetPrice2: tp2, stopLoss: sl,
+      riskLevel: "Medium",
+      reasoning: `Price at ${(pricePos * 100).toFixed(0)}% of 24h range (${ticker.low24h.toFixed(5)}–${ticker.high24h.toFixed(5)}) — ${dir === "BUY" ? "near daily low, potential bounce" : "near daily high, potential reversal"}`,
+      taScore: 5,
+    };
+  } catch (e: any) {
+    addLog(`❌ ${pair} — Forex analysis failed: ${e?.message ?? "unknown error"}`, "error");
+    return null;
+  }
+}
+
+// ── Deep analysis + Gemini signal for ONE crypto pair ─────────────────────────
 async function analyzeOnePair(pair: string, apiKey: string | undefined): Promise<ScoredSignal | null> {
   try {
     addLog(`📡 Fetching live Binance data for ${pair}…`, "info");
@@ -255,7 +367,9 @@ async function scanOnce() {
 
   const results = await Promise.allSettled(
     state.pairs.map(async (pair) => {
-      const sig = await analyzeOnePair(pair, apiKey);
+      const sig = isForexPair(pair)
+        ? await analyzeForexPair(pair, apiKey)
+        : await analyzeOnePair(pair, apiKey);
       state.scannedPairs++;
       state.currentAction = `Analyzed ${state.scannedPairs}/${state.pairs.length} pairs…`;
       return sig;
@@ -299,7 +413,7 @@ async function scanOnce() {
     targetPrice: best.targetPrice,
     stopLoss:    best.stopLoss,
     confidence:  best.confidence,
-    category:    "crypto",
+    category:    isForexPair(best.pair) ? "forex" : "crypto",
     status:      "active",
   }).returning();
 
