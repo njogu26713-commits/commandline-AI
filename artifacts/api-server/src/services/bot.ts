@@ -221,8 +221,9 @@ async function analyzeOnePair(pair: string, apiKey: string | undefined): Promise
     }
 
     const taScore = Math.max(bullScore, bearScore);
-    const minTaScore = state.mode === "conservative" ? 7 : state.mode === "balanced" ? 5 : 4;
-    if (taScore < minTaScore || Math.abs(bullScore - bearScore) < 2) {
+    const minTaScore = state.mode === "conservative" ? 6 : state.mode === "balanced" ? 3 : 2;
+    const minGap    = state.mode === "conservative" ? 2 : 1;
+    if (taScore < minTaScore || Math.abs(bullScore - bearScore) < minGap) {
       addLog(`⏭ ${pair} — TA score ${taScore}/${minTaScore} required, weak confluence — skipping`, "skip");
       return null;
     }
