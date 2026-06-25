@@ -2,7 +2,7 @@ import { db } from "@workspace/db";
 import { tradingSignalsTable, subscribersTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
 import { getDeepAnalysis, getForexRate } from "./binance.js";
-import { sendTypingMessages, getWAStatus, sendMessageToGroup, sendTypingMessagesToGroup, buildGroupSignalMessages, getSignalGroupInfo } from "./whatsapp.js";
+import { sendTypingMessages, getWAStatus, sendMessageToGroup, sendTypingMessagesToGroup, generateGroupSignalMessages, getSignalGroupInfo } from "./whatsapp.js";
 import { logger } from "../lib/logger.js";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -468,8 +468,8 @@ async function scanOnce() {
     try {
       const groupInfo = await getSignalGroupInfo();
       if (groupInfo.exists) {
-        const groupMsgs = buildGroupSignalMessages(
-          { pair: best.pair, direction: best.direction, confidence: best.confidence, riskLevel: best.riskLevel },
+        const groupMsgs = await generateGroupSignalMessages(
+          { pair: best.pair, direction: best.direction, confidence: best.confidence, riskLevel: best.riskLevel, reasoning: best.reasoning, category: isForexPair(best.pair) ? "forex" : "crypto" },
           groupInfo.inviteLink,
         );
         await sendTypingMessagesToGroup(groupMsgs);

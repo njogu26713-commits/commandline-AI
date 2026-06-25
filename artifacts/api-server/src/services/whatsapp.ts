@@ -557,6 +557,66 @@ export async function sendTypingMessagesToGroup(messages: string[], typingMs = 1
   }
 }
 
+// Ask Gemini to write the group messages fresh for every signal.
+// Falls back to the template pool if Gemini is unavailable.
+export async function generateGroupSignalMessages(signal: {
+  pair: string;
+  direction: string;
+  confidence: number;
+  riskLevel?: string;
+  reasoning?: string;
+  category?: string;
+}, inviteLink?: string | null): Promise<string[]> {
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (apiKey) {
+    try {
+      const { GoogleGenerativeAI } = await import("@google/generative-ai");
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
+
+      const inviteInstruction = inviteLink
+        ? `\n- If you want, you can add a 4th message inviting people to join with this link: ${inviteLink}`
+        : "";
+
+      const prompt = `You are the admin of a WhatsApp trading signals group called CommandLine Signals. A new ${signal.category ?? "trading"} signal just fired. Post 3 short, casual messages to the group — the way a real human admin would type them, not a bot.
+
+Signal:
+- Pair: ${signal.pair}
+- Direction: ${signal.direction}
+- Confidence: ${signal.confidence}%
+- Risk: ${signal.riskLevel ?? "Medium"}
+${signal.reasoning ? `- Why: ${signal.reasoning}` : ""}
+
+Rules:
+- Exactly 3 messages (or 4 if you add an invite). Each one short — 1 to 3 lines max.
+- Message 1: One-liner teaser that builds curiosity. Don't give everything away.
+- Message 2: Casually reveal the pair, direction, confidence and risk. Sound excited but real, not robotic. Use emojis naturally.
+- Message 3: Tell them to check their personal DMs from the bot for the full entry, TP and SL. Be punchy.
+- NEVER share the actual entry price, TP or SL in the group — only in DMs.
+- No formal language, no bullet-point lists, no markdown headers.${inviteInstruction}
+
+Respond ONLY with a valid JSON array of strings — no explanation, no extra text:
+["msg1", "msg2", "msg3"]`;
+
+      const result = await model.generateContent(prompt);
+      const text   = result.response.text().trim();
+      const match  = text.match(/\[[\s\S]*\]/);
+      if (match) {
+        const msgs: unknown = JSON.parse(match[0]);
+        if (Array.isArray(msgs) && msgs.length >= 3 && (msgs as any[]).every((m: unknown) => typeof m === "string")) {
+          return msgs as string[];
+        }
+      }
+    } catch (e) {
+      console.warn("[WA-group] Gemini unavailable — falling back to templates:", (e as any)?.message ?? e);
+    }
+  }
+
+  // ── Fallback: template pools ────────────────────────────────────────────────
+  return buildGroupSignalMessages(signal, inviteLink);
+}
+
 // Build short, human-style group notification messages for a signal.
 // Every section is drawn from a pool so no two broadcasts look the same.
 export function buildGroupSignalMessages(signal: {

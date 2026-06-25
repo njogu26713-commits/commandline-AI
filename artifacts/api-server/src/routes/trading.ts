@@ -3,7 +3,7 @@ import { db } from "@workspace/db";
 import { tradingSignalsTable, subscribersTable, tradingPerformanceTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { getMarketData, getKlines, buildMarketContext } from "../services/binance.js";
-import { getWAStatus, broadcastSignal, sendMessageToGroup, sendTypingMessagesToGroup, buildGroupSignalMessages, getSignalGroupInfo } from "../services/whatsapp.js";
+import { getWAStatus, broadcastSignal, sendMessageToGroup, sendTypingMessagesToGroup, generateGroupSignalMessages, getSignalGroupInfo } from "../services/whatsapp.js";
 
 const router = Router();
 
@@ -219,8 +219,8 @@ async function saveAndBroadcast(signal: {
     try {
       const groupInfo = await getSignalGroupInfo();
       if (groupInfo.exists) {
-        const groupMsgs = buildGroupSignalMessages(
-          { pair: signal.pair, direction: signal.direction, confidence: signal.confidence, riskLevel: signal.riskLevel },
+        const groupMsgs = await generateGroupSignalMessages(
+          { pair: signal.pair, direction: signal.direction, confidence: signal.confidence, riskLevel: signal.riskLevel, reasoning: signal.reasoning, category: signal.category },
           groupInfo.inviteLink,
         );
         await sendTypingMessagesToGroup(groupMsgs);
