@@ -326,7 +326,8 @@ export async function connectWhatsApp() {
 
     // ── Listen for incoming messages and reply with AI ────────────────────────
     sock.ev.on("messages.upsert", async ({ messages: msgs, type }) => {
-      // Accept both "notify" (real-time) and "append" (history sync) — don't filter by type
+      // Only handle real-time messages; "append" is history sync — skip to avoid replaying old msgs
+      if (type !== "notify") return;
       console.log(`[WA-msg] messages.upsert type=${type} count=${msgs.length}`);
       for (const msg of msgs) {
         if (!msg.message) continue;
@@ -334,15 +335,26 @@ export async function connectWhatsApp() {
         const jid = msg.key.remoteJid;
         if (!jid || jid === "status@broadcast") continue;
 
-        // Extract text from various message types
+        // Unwrap ephemeral / viewOnce wrappers that Baileys uses in group chats
+        const innerMsg =
+          msg.message.ephemeralMessage?.message ??
+          msg.message.viewOnceMessage?.message ??
+          msg.message.viewOnceMessageV2?.message ??
+          msg.message;
+
+        // Extract text from all common message types (groups use extendedTextMessage most often)
         const text =
-          msg.message.conversation ??
-          msg.message.extendedTextMessage?.text ??
-          msg.message.imageMessage?.caption ??
-          msg.message.buttonsResponseMessage?.selectedDisplayText ??
+          innerMsg.conversation ??
+          innerMsg.extendedTextMessage?.text ??
+          innerMsg.imageMessage?.caption ??
+          innerMsg.videoMessage?.caption ??
+          innerMsg.buttonsResponseMessage?.selectedDisplayText ??
+          innerMsg.listResponseMessage?.singleSelectReply?.selectedRowId ??
           "";
 
-        console.log(`[WA-msg] From ${jid} | type=${type} | text="${text.slice(0, 60)}"`);
+        const isGroup = jid.endsWith("@g.us");
+        const sender  = msg.key.participant ?? jid; // participant = actual sender in groups
+        console.log(`[WA-msg] From ${jid} | sender=${sender} | group=${isGroup} | type=${type} | text="${text.slice(0, 60)}"`);
 
         if (!text.trim()) continue;
 
