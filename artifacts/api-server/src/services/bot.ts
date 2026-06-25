@@ -355,6 +355,7 @@ async function scanOnce() {
       const groupInfo = await getSignalGroupInfo();
       if (groupInfo.exists) {
         const now = new Date().toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Nairobi" });
+        const inviteLine = groupInfo.inviteLink ? `\n🔗 *Not in the group yet?* Join → ${groupInfo.inviteLink}` : "";
         const groupMsg = [
           `🔔 *New Signal Just Dropped!*`,
           ``,
@@ -364,7 +365,7 @@ async function scanOnce() {
           ``,
           `⏰ ${now} EAT  |  📊 Confidence: *${best.confidence}%*  |  Risk: *${best.riskLevel}*`,
           ``,
-          `_Signals are delivered privately to protect your trading edge. Follow the plan and manage your risk! 💪_`,
+          `_Signals are delivered privately to protect your trading edge. Follow the plan and manage your risk! 💪_${inviteLine}`,
         ].join("\n");
         await sendMessageToGroup(groupMsg);
         addLog(`📢 Group notified — members told to check DMs for the ${best.pair} signal`, "info");

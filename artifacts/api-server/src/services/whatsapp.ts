@@ -198,6 +198,58 @@ ${pick(CLOSE_PHRASES)}`,
   ];
 }
 
+// ── AI auto-reply ─────────────────────────────────────────────────────────────
+const replyCooldowns = new Map<string, number>(); // jid → last reply timestamp ms
+
+const AI_REPLY_SYSTEM = `You are CommandLine AI — the friendly assistant for CommandLine Signals, an elite AI-powered crypto & forex trading signal service.
+
+Your role in this group/chat:
+- Answer members' questions about trading concepts, the signals service, how signals work, risk management, etc.
+- Keep replies SHORT (2–4 sentences max) and use emojis naturally.
+- If someone asks about a specific active signal or wants full entry/TP/SL details, tell them to check their personal DMs from the bot.
+- Never post specific buy/sell signal prices in the group — those are delivered privately.
+- If someone asks something totally off-topic, politely redirect to trading.
+- Be encouraging, hype the community, and keep the vibe professional but fun.
+- Do NOT reveal that you are Gemini or Google AI. You are "CommandLine AI".`;
+
+async function handleIncomingMessage(
+  sock: ReturnType<typeof makeWASocket>,
+  jid: string,
+  text: string,
+) {
+  if (!text?.trim()) return;
+
+  // 15-second cooldown per chat to avoid rapid-fire replies
+  const now = Date.now();
+  if ((replyCooldowns.get(jid) ?? 0) + 15_000 > now) return;
+  replyCooldowns.set(jid, now);
+
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) return;
+
+  try {
+    const { GoogleGenerativeAI } = await import("@google/generative-ai");
+    const genAI  = new GoogleGenerativeAI(apiKey);
+    const model  = genAI.getGenerativeModel({
+      model: "gemini-2.0-flash-lite",
+      systemInstruction: AI_REPLY_SYSTEM,
+    });
+    const result = await model.generateContent(text);
+    const reply  = result.response.text().trim();
+    if (!reply) return;
+
+    // Human-like typing delay (1–2.5 s)
+    await delay(1000 + Math.random() * 1500);
+    try { await sock.sendPresenceUpdate("composing", jid); } catch {}
+    await delay(800);
+    try { await sock.sendPresenceUpdate("paused", jid); } catch {}
+    await delay(200);
+    await sock.sendMessage(jid, { text: reply });
+  } catch {
+    // Silently swallow AI errors — never crash the bot
+  }
+}
+
 // ── WhatsApp connection ───────────────────────────────────────────────────────
 export async function connectWhatsApp() {
   if (state.connecting || state.connected) return;
@@ -264,6 +316,37 @@ export async function connectWhatsApp() {
     });
 
     sock.ev.on("creds.update", saveCreds);
+
+    // ── Listen for incoming messages and reply with AI ────────────────────────
+    sock.ev.on("messages.upsert", async ({ messages: msgs, type }) => {
+      if (type !== "notify") return;
+      for (const msg of msgs) {
+        if (!msg.message) continue;
+        if (msg.key.fromMe) continue; // don't reply to own messages
+        const jid = msg.key.remoteJid;
+        if (!jid || jid === "status@broadcast") continue;
+
+        // Extract text from various message types
+        const text =
+          msg.message.conversation ??
+          msg.message.extendedTextMessage?.text ??
+          msg.message.imageMessage?.caption ??
+          "";
+
+        if (!text.trim()) continue;
+
+        // For group chats, only reply if the bot is @mentioned OR it's a question
+        const isGroup = jid.endsWith("@g.us");
+        const botPhone = state.phone ?? "";
+        const mentionedJids: string[] = (msg.message.extendedTextMessage?.contextInfo?.mentionedJid as string[] | undefined) ?? [];
+        const isMentioned = botPhone && mentionedJids.some(j => j.startsWith(botPhone));
+        const isQuestion = /\?/.test(text) || /^(what|how|when|why|who|is|are|can|will|should|does|do)\b/i.test(text.trim());
+
+        if (isGroup && !isMentioned && !isQuestion) continue;
+
+        await handleIncomingMessage(sock, jid, text);
+      }
+    });
   } catch (err) {
     state.connecting = false;
     throw err;

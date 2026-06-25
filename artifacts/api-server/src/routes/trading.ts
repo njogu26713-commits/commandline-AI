@@ -220,6 +220,7 @@ async function saveAndBroadcast(signal: {
       const groupInfo = await getSignalGroupInfo();
       if (groupInfo.exists) {
         const now = new Date().toLocaleTimeString("en-KE", { hour: "2-digit", minute: "2-digit", timeZone: "Africa/Nairobi" });
+        const inviteLine = groupInfo.inviteLink ? `\n🔗 *Not in the group yet?* Join → ${groupInfo.inviteLink}` : "";
         const groupMsg = [
           `🔔 *New Signal Just Dropped!*`,
           ``,
@@ -229,7 +230,7 @@ async function saveAndBroadcast(signal: {
           ``,
           `⏰ ${now} EAT  |  📊 Confidence: *${signal.confidence}%*  |  Risk: *${signal.riskLevel}*`,
           ``,
-          `_Signals are delivered privately to protect your trading edge. Follow the plan! 💪_`,
+          `_Signals are delivered privately to protect your trading edge. Follow the plan! 💪_${inviteLine}`,
         ].join("\n");
         await sendMessageToGroup(groupMsg);
       }
