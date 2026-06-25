@@ -25,7 +25,6 @@ function detectPairs(text: string): string[] {
   for (const [keyword, symbol] of Object.entries(KNOWN_PAIRS)) {
     if (upper.includes(keyword)) found.add(symbol);
   }
-  // Default to BTC + ETH if nothing mentioned
   if (found.size === 0) { found.add("BTCUSDT"); found.add("ETHUSDT"); }
   return Array.from(found).slice(0, 3);
 }
@@ -93,26 +92,24 @@ router.get("/ai/sessions/:id/messages", async (req, res) => {
   } catch (err) { req.log.error(err); res.status(500).json({ error: "Internal server error" }); }
 });
 
-// ── Messages — real Gemini AI + deep multi-timeframe Binance analysis ─────────
+// ── Messages — Groq AI + deep multi-timeframe Binance analysis ────────────────
 router.post("/ai/sessions/:id/messages", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const { content } = req.body;
     if (!content) return res.status(400).json({ error: "content is required" });
 
-    // Save user message
     await db.insert(aiMessagesTable).values({ sessionId: id, role: "user", content }).returning();
 
-    // Load recent conversation history
     const history = await db.select().from(aiMessagesTable)
       .where(eq(aiMessagesTable.sessionId, id))
       .orderBy(aiMessagesTable.createdAt);
 
     let aiContent: string;
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
-      aiContent = `⚠️ **Gemini AI key not configured.**\n\nAdd your GEMINI_API_KEY to environment secrets to enable live AI market analysis.`;
+      aiContent = `⚠️ **AI key not configured.**\n\nAdd GROQ_API_KEY to environment secrets to enable live AI market analysis.`;
     } else {
       // Fetch deep multi-timeframe analysis for detected pairs
       const pairs = detectPairs(content);
@@ -124,36 +121,61 @@ router.post("/ai/sessions/:id/messages", async (req, res) => {
         .map(r => r.value.context)
         .join("\n\n");
 
-      const { GoogleGenAI } = await import("@google/genai");
-      const genAI = new GoogleGenAI({ apiKey });
-
-      const chatHistory = history.slice(0, -1).slice(-8).map(m => ({
-        role: m.role === "user" ? "user" as const : "model" as const,
-        parts: [{ text: m.content }],
-      }));
-
       const userPrompt = marketContext
         ? `USER REQUEST: ${content}\n\n## LIVE MULTI-TIMEFRAME MARKET DATA (just fetched from Binance):\n\n${marketContext}\n\nBased on this data, provide your expert analysis and signal(s).`
         : content;
 
-      const chat = genAI.chats.create({
-        model: "gemini-2.0-flash",
-        history: chatHistory,
-        config: { systemInstruction: SYSTEM_PROMPT },
+      const chatMessages = [
+        { role: "system" as const, content: SYSTEM_PROMPT },
+        ...history.slice(0, -1).slice(-8).map(m => ({
+          role: m.role === "user" ? "user" as const : "assistant" as const,
+          content: m.content,
+        })),
+        { role: "user" as const, content: userPrompt },
+      ];
+
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "llama-3.3-70b-versatile",
+          messages: chatMessages,
+          max_tokens: 1500,
+          temperature: 0.3,
+        }),
       });
 
-      const result = await chat.sendMessage({ message: userPrompt });
-      aiContent = result.text ?? "";
+      if (!response.ok) {
+        const err = await response.text();
+        throw new Error(`Groq API error ${response.status}: ${err}`);
+      }
+
+      const data = await response.json() as any;
+      aiContent = data.choices?.[0]?.message?.content ?? "No response from AI.";
 
       // Auto-title on first user message
       if (history.length <= 2) {
         try {
-          const titleRes = await genAI.models.generateContent({
-            model: "gemini-2.0-flash",
-            contents: `Generate a very short session title (max 5 words, no quotes) for this trading chat. User said: "${content}"`,
+          const titleRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${apiKey}`,
+            },
+            body: JSON.stringify({
+              model: "llama-3.3-70b-versatile",
+              messages: [{ role: "user", content: `Generate a very short session title (max 5 words, no quotes) for this trading chat. User said: "${content}"` }],
+              max_tokens: 20,
+            }),
           });
-          const newTitle = (titleRes.text ?? "").trim().slice(0, 50);
-          if (newTitle) await db.update(aiSessionsTable).set({ title: newTitle, updatedAt: new Date() }).where(eq(aiSessionsTable.id, id));
+          if (titleRes.ok) {
+            const titleData = await titleRes.json() as any;
+            const newTitle = (titleData.choices?.[0]?.message?.content ?? "").trim().slice(0, 50);
+            if (newTitle) await db.update(aiSessionsTable).set({ title: newTitle, updatedAt: new Date() }).where(eq(aiSessionsTable.id, id));
+          }
         } catch {}
       }
     }
