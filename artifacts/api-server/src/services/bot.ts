@@ -408,10 +408,10 @@ async function scanOnce() {
 
   const waStatus = getWAStatus();
   if (waStatus.connected) {
+    const sessionMsg = buildSessionMessage(session, state.intervalMinutes);
     try {
       const groupInfo = await getSignalGroupInfo();
       if (groupInfo.exists) {
-        const sessionMsg = buildSessionMessage(session, state.intervalMinutes);
         await sendMessageToGroup(sessionMsg);
         addLog(`📢 Session update sent to group: ${session.name}`, "info");
       }
