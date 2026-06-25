@@ -56,7 +56,6 @@ let state: BotState = {
 
 let logs: BotLog[] = [];
 let timerId: NodeJS.Timeout | null = null;
-let resultTimerId: NodeJS.Timeout | null = null;
 
 // ── Logging helper ────────────────────────────────────────────────────────────
 function addLog(message: string, type: BotLog["type"] = "info") {
@@ -84,171 +83,6 @@ async function getRecentSignals(limit = 10) {
   } catch { return []; }
 }
 
-// ── Gemini-powered result message generator ───────────────────────────────────
-async function generateResultMessage(signal: {
-  pair: string;
-  direction: string;
-  entryPrice: number;
-  exitPrice: number;
-  tp1: number;
-  sl: number;
-  pnl: number;
-  status: "won" | "lost";
-}): Promise<string[]> {
-  const apiKey = process.env.GROQ_API_KEY;
-  const pnlStr = `${signal.pnl > 0 ? "+" : ""}${signal.pnl}%`;
-
-  if (apiKey) {
-    try {
-      const Groq = (await import("groq-sdk")).default;
-      const groq = new Groq({ apiKey });
-
-      const prompt = signal.status === "won"
-        ? `You are the admin of a WhatsApp trading signals group called CommandLine Signals. A signal just hit its target — it's a WIN! Post 2 short, hype messages to the group the way a real human admin would type, not a bot.
-
-Signal result:
-- Pair: ${signal.pair}
-- Direction: ${signal.direction}
-- Entry: ${signal.entryPrice}
-- Target hit: ${signal.tp1}
-- PNL: ${pnlStr}
-
-Rules:
-- Exactly 2 messages. Each one 1–3 lines max.
-- Message 1: Explosive win celebration. Build hype. Use emojis naturally.
-- Message 2: Brief stats recap (pair, direction, PNL). Remind them the bot is watching and more signals are coming.
-- Sound human and excited, not formal or robotic.
-- Do NOT use markdown headers or bullet lists.
-
-Respond ONLY with a valid JSON array of strings:
-["msg1", "msg2"]`
-        : `You are the admin of a WhatsApp trading signals group called CommandLine Signals. A signal just hit its stop-loss — it's a LOSS. Post 2 short, composed messages to the group the way a calm, professional human admin would type.
-
-Signal result:
-- Pair: ${signal.pair}
-- Direction: ${signal.direction}
-- Entry: ${signal.entryPrice}
-- Stop hit: ${signal.sl}
-- PNL: ${pnlStr}
-
-Rules:
-- Exactly 2 messages. Each one 1–3 lines max.
-- Message 1: Acknowledge the stop loss calmly. No panic. Losses are part of the game.
-- Message 2: Reassure the group — risk was managed, next setup is coming. Keep morale up.
-- Sound human and grounded, not robotic or over-apologetic.
-- Do NOT use markdown headers or bullet lists.
-
-Respond ONLY with a valid JSON array of strings:
-["msg1", "msg2"]`;
-
-      const completion = await groq.chat.completions.create({
-        model: "llama-3.3-70b-versatile",
-        messages: [{ role: "user", content: prompt }],
-        max_tokens: 300,
-      });
-      const text  = completion.choices[0]?.message?.content?.trim() ?? "";
-      const match = text.match(/\[[\s\S]*\]/);
-      if (match) {
-        const msgs: unknown = JSON.parse(match[0]);
-        if (Array.isArray(msgs) && msgs.length >= 1 && (msgs as any[]).every((m: unknown) => typeof m === "string")) {
-          return msgs as string[];
-        }
-      }
-    } catch (e) {
-      console.warn("[result-msg] Groq unavailable — falling back to template:", (e as any)?.message ?? e);
-    }
-  }
-
-  // ── Fallback templates ────────────────────────────────────────────────────
-  const pnlStr2 = `${signal.pnl > 0 ? "+" : ""}${signal.pnl}%`;
-  if (signal.status === "won") {
-    return [
-      `✅ TARGET HIT! ${signal.pair} ${signal.direction} — ${pnlStr2} profit! 🔥`,
-      `📍 Entry: ${signal.entryPrice} → TP: ${signal.tp1}\nBot stays watching. Next signal incoming 👀`,
-    ];
-  }
-  return [
-    `🛑 Stop loss hit on ${signal.pair} ${signal.direction} (${pnlStr2}). Part of the game.`,
-    `Risk was managed. Stay focused — next setup is loading 💪`,
-  ];
-}
-
-// ── Auto result checker ───────────────────────────────────────────────────────
-async function checkSignalResults() {
-  try {
-    const activeSignals = await db.select()
-      .from(tradingSignalsTable)
-      .where(eq(tradingSignalsTable.status, "active"));
-
-    if (activeSignals.length === 0) return;
-
-    addLog(`🔍 Checking ${activeSignals.length} active signal${activeSignals.length !== 1 ? "s" : ""} against live prices…`, "info");
-
-    for (const signal of activeSignals) {
-      try {
-        const ticker = isForexPair(signal.pair)
-          ? await getForexRate(signal.pair)
-          : await getTicker(signal.pair);
-        const price = ticker.price;
-
-        const tp1 = signal.targetPrice;
-        const sl  = signal.stopLoss;
-
-        const hitTP  = signal.direction === "BUY" ? price >= tp1 : price <= tp1;
-        const hitSL  = signal.direction === "BUY" ? price <= sl  : price >= sl;
-
-        if (!hitTP && !hitSL) continue;
-
-        const status: "won" | "lost" = hitTP ? "won" : "lost";
-        const exitPrice = hitTP ? tp1 : sl;
-        const pnl = parseFloat((
-          signal.direction === "BUY"
-            ? ((exitPrice - signal.entryPrice) / signal.entryPrice) * 100
-            : ((signal.entryPrice - exitPrice) / signal.entryPrice) * 100
-        ).toFixed(2));
-
-        await db.update(tradingSignalsTable)
-          .set({ status, pnl })
-          .where(eq(tradingSignalsTable.id, signal.id));
-
-        const emoji   = status === "won" ? "✅" : "❌";
-        const pnlStr  = `${pnl > 0 ? "+" : ""}${pnl}%`;
-        addLog(`${emoji} ${signal.pair} ${signal.direction} → ${status.toUpperCase()} (PNL: ${pnlStr}) | Entry: ${signal.entryPrice} → Exit: ${exitPrice.toFixed(signal.pair.includes("USD") && !signal.pair.includes("USDT") ? 5 : 2)}`, "signal");
-
-        // ── WhatsApp notification ─────────────────────────────────────────────
-        const waOk = getWAStatus().connected;
-        if (waOk) {
-          const resultMsgs = await generateResultMessage({
-            pair: signal.pair,
-            direction: signal.direction,
-            entryPrice: signal.entryPrice,
-            exitPrice,
-            tp1,
-            sl,
-            pnl,
-            status,
-          });
-
-          try {
-            const groupInfo = await getSignalGroupInfo();
-            if (groupInfo.exists) await sendTypingMessagesToGroup(resultMsgs, 1000);
-          } catch {}
-
-          try {
-            const subs = await db.select().from(subscribersTable).where(eq(subscribersTable.status, "active"));
-            for (const sub of subs) {
-              try { await sendTypingMessages(sub.phone, resultMsgs, 600); } catch {}
-            }
-          } catch {}
-        }
-      } catch (e: any) {
-        addLog(`⚠ Could not check ${signal.pair}: ${e?.message ?? "unknown"}`, "error");
-      }
-    }
-  } catch (e: any) {
-    addLog(`❌ Result checker error: ${e?.message ?? "unknown"}`, "error");
-  }
-}
 
 // ── Pair type detection ───────────────────────────────────────────────────────
 function isForexPair(pair: string): boolean {
@@ -331,33 +165,13 @@ Respond ONLY with valid JSON:
           taScore: 6,
         };
       } catch (e: any) {
-        addLog(`⚠ ${pair} — AI Forex error: ${e?.message ?? "unknown"} — using range fallback`, "error");
+        addLog(`⚠ ${pair} — AI Forex error: ${e?.message ?? "unknown"} — skipping pair`, "error");
+        return null;
       }
     }
 
-    // ── Range-based fallback for forex ──────────────────────────────────────
-    const minConf = state.mode === "conservative" ? 78 : state.mode === "balanced" ? 68 : 60;
-    const conf = pricePos < 0.25 || pricePos > 0.75 ? 68 : 58;
-    if (conf < minConf) {
-      addLog(`⏭ ${pair} — Forex range confidence ${conf}% below minimum ${minConf}% — skipping`, "skip");
-      return null;
-    }
-
-    const dir   = bias;
-    const entry = ticker.price;
-    const tp1   = dir === "BUY" ? entry + atr * 1.5 : entry - atr * 1.5;
-    const tp2   = dir === "BUY" ? entry + atr * 2.5 : entry - atr * 2.5;
-    const sl    = dir === "BUY" ? entry - atr       : entry + atr;
-
-    addLog(`📈 ${pair} — Forex range signal: ${dir} @ ${entry.toFixed(5)} | Conf: ${conf}% (range-based)`, "signal");
-
-    return {
-      pair, direction: dir, confidence: conf,
-      entryPrice: entry, targetPrice: tp1, targetPrice2: tp2, stopLoss: sl,
-      riskLevel: "Medium",
-      reasoning: `Price at ${(pricePos * 100).toFixed(0)}% of 24h range (${ticker.low24h.toFixed(5)}–${ticker.high24h.toFixed(5)}) — ${dir === "BUY" ? "near daily low, potential bounce" : "near daily high, potential reversal"}`,
-      taScore: 5,
-    };
+    addLog(`⏭ ${pair} — no GROQ_API_KEY configured — skipping`, "skip");
+    return null;
   } catch (e: any) {
     addLog(`❌ ${pair} — Forex analysis failed: ${e?.message ?? "unknown error"}`, "error");
     return null;
@@ -467,33 +281,13 @@ Respond ONLY with valid JSON:
           taScore,
         };
       } catch (e: any) {
-        addLog(`⚠ ${pair} — AI error: ${e?.message ?? "unknown"} — using TA fallback`, "error");
+        addLog(`⚠ ${pair} — AI error: ${e?.message ?? "unknown"} — skipping pair`, "error");
+        return null;
       }
     }
 
-    // ── TA-only fallback ────────────────────────────────────────────────────
-    const dir = taBiasDirection;
-    const entry = ticker.price;
-    const tp1  = dir === "BUY" ? entry + atr * 2.5 : entry - atr * 2.5;
-    const tp2  = dir === "BUY" ? entry + atr * 4.0 : entry - atr * 4.0;
-    const sl   = dir === "BUY" ? Math.max(entry - atr * 1.5, ta.support * 0.999) : Math.min(entry + atr * 1.5, ta.resistance * 1.001);
-    const conf = Math.min(55 + taScore * 4, 88);
-    const minConf = state.mode === "conservative" ? 78 : state.mode === "balanced" ? 68 : 60;
-
-    if (conf < minConf) {
-      addLog(`⏭ ${pair} — TA fallback confidence ${conf}% below minimum ${minConf}% — skipping`, "skip");
-      return null;
-    }
-
-    addLog(`📈 ${pair} — TA signal: ${dir} @ ${entry.toFixed(2)} | Conf: ${Math.round(conf)}% (TA-only)`, "signal");
-
-    return {
-      pair, direction: dir, confidence: Math.round(conf),
-      entryPrice: entry, targetPrice: tp1, targetPrice2: tp2, stopLoss: sl,
-      riskLevel: conf >= 82 ? "Low" : conf >= 72 ? "Medium" : "High",
-      reasoning: `RSI=${ta.rsi14.toFixed(1)} · MACD ${ta.macdHistogram > 0 ? "positive" : "negative"} · EMA ${ta.ema9 > ta.ema21 ? "bullish" : "bearish"} · BB ${ta.priceVsBB} · Volume ${ta.volumeSignal}`,
-      taScore,
-    };
+    addLog(`⏭ ${pair} — no GROQ_API_KEY configured — skipping`, "skip");
+    return null;
   } catch (e: any) {
     addLog(`❌ ${pair} — analysis failed: ${e?.message ?? "unknown error"}`, "error");
     return null;
@@ -527,9 +321,6 @@ function buildMessages(signal: ScoredSignal): string[] {
 // ── Core scan — ALL pairs in parallel, pick best ──────────────────────────────
 async function scanOnce() {
   if (!state.active) return;
-
-  // Check existing active signals first
-  await checkSignalResults().catch(e => addLog(`⚠ Result check error: ${e?.message ?? "unknown"}`, "error"));
 
   state.lastScanAt    = new Date().toISOString();
   state.nextScanAt    = new Date(Date.now() + state.intervalMinutes * 60 * 1000).toISOString();
@@ -696,19 +487,11 @@ export function startBot(opts: {
     });
   }, state.intervalMinutes * 60 * 1000);
 
-  // Independent result checker — runs every 2 minutes between scans
-  resultTimerId = setInterval(() => {
-    checkSignalResults().catch(e => {
-      addLog(`⚠ Result check error: ${e?.message ?? "unknown"}`, "error");
-    });
-  }, 2 * 60 * 1000);
-
   logger.info(state, "Bot: started in autonomous mode");
 }
 
 export function stopBot() {
   if (timerId) { clearInterval(timerId); timerId = null; }
-  if (resultTimerId) { clearInterval(resultTimerId); resultTimerId = null; }
   state.active        = false;
   state.nextScanAt    = null;
   state.currentAction = null;

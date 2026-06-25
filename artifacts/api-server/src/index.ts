@@ -2,6 +2,7 @@ import app from "./app";
 import { logger } from "./lib/logger";
 import { existsSync } from "fs";
 import { connectWhatsApp } from "./services/whatsapp.js";
+import { startSignalMonitor } from "./services/signal-monitor.js";
 
 const rawPort = process.env["PORT"];
 
@@ -24,6 +25,9 @@ app.listen(port, async (err) => {
   }
 
   logger.info({ port }, "Server listening");
+
+  // Start signal result monitor — always running, auto-marks signals won/lost
+  startSignalMonitor();
 
   // Auto-reconnect WhatsApp if saved credentials exist
   const credsPath = "/tmp/wa-auth/creds.json";

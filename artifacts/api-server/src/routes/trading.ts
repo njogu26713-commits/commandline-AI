@@ -298,48 +298,7 @@ Respond ONLY with valid JSON:
     }
   }
 
-  // ── Step 3: TA-only fallback ─────────────────────────────────────────────────
-  if (!ticker || !ta) {
-    return res.status(503).json({ error: "Could not fetch live market data. Check Binance connectivity." });
-  }
-
-  try {
-    const atr  = ta.atr14 ?? currentPrice * 0.01;
-    let bullScore = 0, bearScore = 0;
-    if (ta.rsi14 < 35) bullScore += 3; else if (ta.rsi14 < 45) bullScore += 1;
-    if (ta.rsi14 > 65) bearScore += 3; else if (ta.rsi14 > 55) bearScore += 1;
-    if (ta.ema9 > ta.ema21) bullScore += 2; else bearScore += 2;
-    if (ta.macdHistogram > 0) bullScore += 2; else bearScore += 2;
-    if (ta.priceVsBB === "NEAR_LOWER" || ta.priceVsBB === "BELOW_LOWER") bullScore += 2;
-    if (ta.priceVsBB === "NEAR_UPPER" || ta.priceVsBB === "ABOVE_UPPER") bearScore += 2;
-
-    const dir        = bullScore >= bearScore ? "BUY" : "SELL";
-    const taScore    = Math.max(bullScore, bearScore);
-    const entry      = currentPrice;
-    const tp         = dir === "BUY" ? entry + atr * 2.5 : entry - atr * 2.5;
-    const sl         = dir === "BUY"
-      ? Math.max(entry - atr * 1.5, (ta.support ?? entry * 0.98) * 0.999)
-      : Math.min(entry + atr * 1.5, (ta.resistance ?? entry * 1.02) * 1.001);
-    const confidence = Math.min(55 + taScore * 4, 88);
-    const riskLevel  = confidence >= 82 ? "Low" : confidence >= 72 ? "Medium" : "High";
-    const reasoning  = `RSI ${ta.rsi14?.toFixed(1)} · MACD ${ta.macdHistogram > 0 ? "positive" : "negative"} · EMA ${ta.ema9 > ta.ema21 ? "bullish" : "bearish"} · BB ${ta.priceVsBB} (TA-only)`;
-
-    const { saved, broadcast } = await saveAndBroadcast({
-      pair, category, source: "ta",
-      direction:   dir,
-      entryPrice:  entry,
-      targetPrice: tp,
-      stopLoss:    sl,
-      confidence:  Math.round(confidence),
-      riskLevel,
-      reasoning,
-    });
-
-    return res.json({ direction: dir, entryPrice: entry, targetPrice: tp, stopLoss: sl, confidence: Math.round(confidence), riskLevel, reasoning, pair, category, currentPrice, source: "ta", id: saved.id, broadcast });
-  } catch (err: any) {
-    req.log.error(err);
-    res.status(500).json({ error: err.message ?? "Signal generation failed" });
-  }
+  return res.status(503).json({ error: "AI could not generate a signal for this pair right now. Try again or pick a different pair." });
 });
 
 export default router;
