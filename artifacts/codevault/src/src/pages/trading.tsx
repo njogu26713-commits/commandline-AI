@@ -106,10 +106,17 @@ export default function Trading() {
     try {
       const r = await fetch("/api/whatsapp/groups/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "CommandLine Signals 🔥" }) });
       const d = await r.json();
-      if (!r.ok) { alert(d.error ?? "Failed to create group"); }
-      else { refetchGroup(); alert(`Group created! ${d.members} subscribers added.`); }
-    } catch { alert("Network error"); }
-    finally { setCreatingGroup(false); }
+      if (!r.ok) {
+        toast({ title: "Group creation failed", description: d.error ?? "Failed to create group", variant: "destructive" });
+      } else {
+        refetchGroup();
+        toast({ title: "✅ Group created!", description: `${d.members} subscriber${d.members !== 1 ? "s" : ""} added to the group.` });
+      }
+    } catch (e: any) {
+      toast({ title: "Network error", description: e?.message ?? "Could not reach the server", variant: "destructive" });
+    } finally {
+      setCreatingGroup(false);
+    }
   };
   const pollRef = useRef<any>(null);
 

@@ -484,8 +484,8 @@ function toJid(phone: string) {
 
 export async function createSignalGroup(name: string, phones: string[]) {
   if (!state.sock || !state.connected) throw new Error("WhatsApp not connected");
-  // WhatsApp requires at least 1 participant; use a placeholder if none exist yet
-  const participants = phones.length > 0 ? phones.map(toJid) : [];
+  if (phones.length === 0) throw new Error("No active subscribers found — add subscribers before creating a group");
+  const participants = phones.map(toJid);
   const { id: groupJid } = await state.sock.groupCreate(name, participants);
   state.groupJid  = groupJid;
   state.groupName = name;
