@@ -287,23 +287,26 @@ async function handleIncomingMessage(
 
   let reply = "";
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
   if (apiKey) {
     try {
-      const { GoogleGenerativeAI } = await import("@google/generative-ai");
-      const genAI  = new GoogleGenerativeAI(apiKey);
-      const model  = genAI.getGenerativeModel({
-        model: "gemini-2.0-flash",
-        systemInstruction: AI_REPLY_SYSTEM,
+      const Groq = (await import("groq-sdk")).default;
+      const groq = new Groq({ apiKey });
+      const completion = await groq.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          { role: "system", content: AI_REPLY_SYSTEM },
+          { role: "user",   content: text },
+        ],
+        max_tokens: 200,
       });
-      const result = await model.generateContent(text);
-      reply = result.response.text().trim();
-      console.log(`[AI-reply] Gemini reply: "${reply.slice(0, 80)}"`);
+      reply = completion.choices[0]?.message?.content?.trim() ?? "";
+      console.log(`[AI-reply] Groq reply: "${reply.slice(0, 80)}"`);
     } catch (err: any) {
-      console.warn("[AI-reply] Gemini failed, using fallback:", err?.message?.slice(0, 120));
+      console.warn("[AI-reply] Groq failed, using fallback:", err?.message?.slice(0, 120));
     }
   } else {
-    console.warn("[AI-reply] No GEMINI_API_KEY — using fallback reply");
+    console.warn("[AI-reply] No GROQ_API_KEY — using fallback reply");
   }
 
   // Use fallback if Gemini failed or returned empty

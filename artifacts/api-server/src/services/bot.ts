@@ -95,14 +95,13 @@ async function generateResultMessage(signal: {
   pnl: number;
   status: "won" | "lost";
 }): Promise<string[]> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
   const pnlStr = `${signal.pnl > 0 ? "+" : ""}${signal.pnl}%`;
 
   if (apiKey) {
     try {
-      const { GoogleGenerativeAI } = await import("@google/generative-ai");
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+      const Groq = (await import("groq-sdk")).default;
+      const groq = new Groq({ apiKey });
 
       const prompt = signal.status === "won"
         ? `You are the admin of a WhatsApp trading signals group called CommandLine Signals. A signal just hit its target — it's a WIN! Post 2 short, hype messages to the group the way a real human admin would type, not a bot.
@@ -142,9 +141,13 @@ Rules:
 Respond ONLY with a valid JSON array of strings:
 ["msg1", "msg2"]`;
 
-      const result = await model.generateContent(prompt);
-      const text   = result.response.text().trim();
-      const match  = text.match(/\[[\s\S]*\]/);
+      const completion = await groq.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 300,
+      });
+      const text  = completion.choices[0]?.message?.content?.trim() ?? "";
+      const match = text.match(/\[[\s\S]*\]/);
       if (match) {
         const msgs: unknown = JSON.parse(match[0]);
         if (Array.isArray(msgs) && msgs.length >= 1 && (msgs as any[]).every((m: unknown) => typeof m === "string")) {
@@ -152,7 +155,7 @@ Respond ONLY with a valid JSON array of strings:
         }
       }
     } catch (e) {
-      console.warn("[result-msg] Gemini unavailable — falling back to template:", (e as any)?.message ?? e);
+      console.warn("[result-msg] Groq unavailable — falling back to template:", (e as any)?.message ?? e);
     }
   }
 
@@ -273,9 +276,8 @@ async function analyzeForexPair(pair: string, apiKey: string | undefined): Promi
           ? history.map(h => `${h.direction} @ ${h.entryPrice} → ${h.status}${h.pnl ? ` (PNL: ${h.pnl}%)` : ""}`).join("; ")
           : "No recent history for this pair";
 
-        const { GoogleGenerativeAI } = await import("@google/generative-ai");
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        const Groq = (await import("groq-sdk")).default;
+        const groq = new Groq({ apiKey });
 
         const prompt = `You are an elite autonomous forex signal engine for CommandLine Signals.
 
@@ -295,14 +297,18 @@ If NO clear setup, return {"skip":true,"reason":"..."}
 Respond ONLY with valid JSON:
 {"skip":false,"direction":"BUY","entryPrice":${ticker.price},"targetPrice":0,"targetPrice2":0,"stopLoss":0,"confidence":72,"riskLevel":"Medium","reasoning":"<2-3 sentences>"}`;
 
-        const result = await model.generateContent(prompt);
-        const text = result.response.text().trim();
+        const completion = await groq.chat.completions.create({
+          model: "llama-3.3-70b-versatile",
+          messages: [{ role: "user", content: prompt }],
+          max_tokens: 300,
+        });
+        const text = completion.choices[0]?.message?.content?.trim() ?? "";
         const match = text.match(/\{[\s\S]*?\}/);
         if (!match) throw new Error("No JSON in response");
         const parsed = JSON.parse(match[0]);
 
         if (parsed.skip) {
-          addLog(`⏭ ${pair} — Gemini Forex: ${parsed.reason ?? "no high-probability setup"}`, "skip");
+          addLog(`⏭ ${pair} — AI Forex: ${parsed.reason ?? "no high-probability setup"}`, "skip");
           return null;
         }
 
@@ -312,9 +318,9 @@ Respond ONLY with valid JSON:
         const tp2   = parseFloat(parsed.targetPrice2) || (direction === "BUY" ? entry + atr * 2.5 : entry - atr * 2.5);
         const sl    = parseFloat(parsed.stopLoss);
 
-        if (isNaN(entry) || isNaN(tp1) || isNaN(sl)) throw new Error("Invalid prices from Gemini");
+        if (isNaN(entry) || isNaN(tp1) || isNaN(sl)) throw new Error("Invalid prices from AI");
 
-        addLog(`✅ ${pair} — Gemini Forex: ${direction} @ ${entry.toFixed(5)} | Confidence: ${parsed.confidence}% | R/R: ${(Math.abs(tp1 - entry) / Math.abs(entry - sl)).toFixed(1)}:1`, "signal");
+        addLog(`✅ ${pair} — AI Forex: ${direction} @ ${entry.toFixed(5)} | Confidence: ${parsed.confidence}% | R/R: ${(Math.abs(tp1 - entry) / Math.abs(entry - sl)).toFixed(1)}:1`, "signal");
 
         return {
           pair, direction,
@@ -325,8 +331,7 @@ Respond ONLY with valid JSON:
           taScore: 6,
         };
       } catch (e: any) {
-        const isQuota = e?.status === 429;
-        addLog(`⚠ ${pair} — Gemini Forex ${isQuota ? "quota reached" : `error: ${e?.message ?? "unknown"}`} — using range fallback`, isQuota ? "skip" : "error");
+        addLog(`⚠ ${pair} — AI Forex error: ${e?.message ?? "unknown"} — using range fallback`, "error");
       }
     }
 
@@ -394,9 +399,9 @@ async function analyzeOnePair(pair: string, apiKey: string | undefined): Promise
 
     const taBiasDirection: "BUY" | "SELL" = bullScore > bearScore ? "BUY" : "SELL";
     const atr = ta.atr14;
-    addLog(`🔍 ${pair} — TA bias: ${taBiasDirection} (bull ${bullScore} vs bear ${bearScore}) — running Gemini deep analysis…`, "info");
+    addLog(`🔍 ${pair} — TA bias: ${taBiasDirection} (bull ${bullScore} vs bear ${bearScore}) — running AI deep analysis…`, "info");
 
-    // ── Gemini deep analysis ────────────────────────────────────────────────
+    // ── Groq AI deep analysis ───────────────────────────────────────────────
     if (apiKey) {
       try {
         const minConf = state.mode === "conservative" ? 78 : state.mode === "balanced" ? 70 : 62;
@@ -405,9 +410,8 @@ async function analyzeOnePair(pair: string, apiKey: string | undefined): Promise
           : "No recent history for this pair";
         const winRate = history.filter(h => h.status === "won").length / (history.filter(h => ["won","lost"].includes(h.status)).length || 1) * 100;
 
-        const { GoogleGenerativeAI } = await import("@google/generative-ai");
-        const genAI = new GoogleGenerativeAI(apiKey);
-        const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+        const Groq = (await import("groq-sdk")).default;
+        const groq = new Groq({ apiKey });
 
         const prompt = `You are an elite autonomous crypto signal engine for CommandLine Signals.
 
@@ -429,14 +433,18 @@ If NO clear setup, return {"skip":true,"reason":"..."}
 Respond ONLY with valid JSON:
 {"skip":false,"direction":"BUY","entryPrice":${ticker.price},"targetPrice":0,"targetPrice2":0,"stopLoss":0,"confidence":75,"riskLevel":"Medium","reasoning":"<2-3 sentences>"}`;
 
-        const result = await model.generateContent(prompt);
-        const text = result.response.text().trim();
+        const completion = await groq.chat.completions.create({
+          model: "llama-3.3-70b-versatile",
+          messages: [{ role: "user", content: prompt }],
+          max_tokens: 300,
+        });
+        const text = completion.choices[0]?.message?.content?.trim() ?? "";
         const match = text.match(/\{[\s\S]*?\}/);
         if (!match) throw new Error("No JSON in response");
         const parsed = JSON.parse(match[0]);
 
         if (parsed.skip) {
-          addLog(`⏭ ${pair} — Gemini: ${parsed.reason ?? "no high-probability setup"}`, "skip");
+          addLog(`⏭ ${pair} — AI: ${parsed.reason ?? "no high-probability setup"}`, "skip");
           return null;
         }
 
@@ -448,7 +456,7 @@ Respond ONLY with valid JSON:
 
         if (isNaN(entry) || isNaN(tp1) || isNaN(sl)) throw new Error("Invalid prices from AI");
 
-        addLog(`✅ ${pair} — Gemini: ${direction} @ ${entry.toFixed(2)} | Confidence: ${parsed.confidence}% | R/R: ${(Math.abs(tp1-entry)/Math.abs(entry-sl)).toFixed(1)}:1`, "signal");
+        addLog(`✅ ${pair} — AI: ${direction} @ ${entry.toFixed(2)} | Confidence: ${parsed.confidence}% | R/R: ${(Math.abs(tp1-entry)/Math.abs(entry-sl)).toFixed(1)}:1`, "signal");
 
         return {
           pair, direction,
@@ -459,8 +467,7 @@ Respond ONLY with valid JSON:
           taScore,
         };
       } catch (e: any) {
-        const isQuota = e?.status === 429;
-        addLog(`⚠ ${pair} — Gemini ${isQuota ? "daily quota reached — using TA fallback" : `error: ${e?.message ?? "unknown"} — using TA fallback`}`, isQuota ? "skip" : "error");
+        addLog(`⚠ ${pair} — AI error: ${e?.message ?? "unknown"} — using TA fallback`, "error");
       }
     }
 
@@ -531,7 +538,7 @@ async function scanOnce() {
 
   addLog(`🚀 Scan started — ${state.pairs.length} pairs | Mode: ${state.mode} | Interval: ${state.intervalMinutes} min`, "info");
 
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
 
   const results = await Promise.allSettled(
     state.pairs.map(async (pair) => {

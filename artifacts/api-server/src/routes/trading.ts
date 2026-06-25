@@ -253,13 +253,12 @@ router.post("/trading/signals/generate", async (req, res) => {
     marketContext = `Pair: ${pair} (live data unavailable)`;
   }
 
-  // ── Step 2: Try Gemini AI analysis ─────────────────────────────────────────
-  const apiKey = process.env.GEMINI_API_KEY;
+  // ── Step 2: Try Groq AI analysis ───────────────────────────────────────────
+  const apiKey = process.env.GROQ_API_KEY;
   if (apiKey && ticker) {
     try {
-      const { GoogleGenerativeAI } = await import("@google/generative-ai");
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+      const Groq = (await import("groq-sdk")).default;
+      const groq = new Groq({ apiKey });
 
       const isForex = category === "forex";
       const prompt = `You are a professional ${isForex ? "forex" : "cryptocurrency"} trader for CodeMind Signals.
@@ -271,9 +270,13 @@ Generate a precise signal. Min confidence: ${confidenceMin}%.
 Respond ONLY with valid JSON:
 {"direction":"BUY","entryPrice":${currentPrice},"targetPrice":0,"stopLoss":0,"confidence":75,"riskLevel":"Medium","reasoning":"<one sentence>"}`;
 
-      const result = await model.generateContent(prompt);
-      const text   = result.response.text().trim();
-      const match  = text.match(/\{[\s\S]*?\}/);
+      const completion = await groq.chat.completions.create({
+        model: "llama-3.3-70b-versatile",
+        messages: [{ role: "user", content: prompt }],
+        max_tokens: 200,
+      });
+      const text  = completion.choices[0]?.message?.content?.trim() ?? "";
+      const match = text.match(/\{[\s\S]*?\}/);
       if (match) {
         const sig = JSON.parse(match[0]);
         if (sig.direction && sig.entryPrice && sig.targetPrice && sig.stopLoss) {
@@ -291,8 +294,7 @@ Respond ONLY with valid JSON:
         }
       }
     } catch (e: any) {
-      const is429 = (e?.message ?? "").includes("429") || (e?.message ?? "").includes("quota");
-      req.log.warn({ is429 }, "Gemini unavailable — falling back to TA-only signal");
+      req.log.warn("Groq unavailable — falling back to TA-only signal");
     }
   }
 
