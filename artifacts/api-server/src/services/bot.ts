@@ -1,7 +1,7 @@
 import { db } from "@workspace/db";
 import { tradingSignalsTable, subscribersTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
-import { getDeepAnalysis, getForexRate } from "./binance.js";
+import { getDeepAnalysis, getForexRate, getTicker, getMarketData } from "./binance.js";
 import { sendTypingMessages, getWAStatus, sendMessageToGroup, sendTypingMessagesToGroup, generateGroupSignalMessages, getSignalGroupInfo } from "./whatsapp.js";
 import { logger } from "../lib/logger.js";
 
@@ -56,6 +56,7 @@ let state: BotState = {
 
 let logs: BotLog[] = [];
 let timerId: NodeJS.Timeout | null = null;
+let resultTimerId: NodeJS.Timeout | null = null;
 
 // ── Logging helper ────────────────────────────────────────────────────────────
 function addLog(message: string, type: BotLog["type"] = "info") {
@@ -81,6 +82,76 @@ async function getRecentSignals(limit = 10) {
       .orderBy(desc(tradingSignalsTable.createdAt))
       .limit(limit);
   } catch { return []; }
+}
+
+// ── Auto result checker ───────────────────────────────────────────────────────
+async function checkSignalResults() {
+  try {
+    const activeSignals = await db.select()
+      .from(tradingSignalsTable)
+      .where(eq(tradingSignalsTable.status, "active"));
+
+    if (activeSignals.length === 0) return;
+
+    addLog(`🔍 Checking ${activeSignals.length} active signal${activeSignals.length !== 1 ? "s" : ""} against live prices…`, "info");
+
+    for (const signal of activeSignals) {
+      try {
+        const ticker = isForexPair(signal.pair)
+          ? await getForexRate(signal.pair)
+          : await getTicker(signal.pair);
+        const price = ticker.price;
+
+        const tp1 = signal.targetPrice;
+        const sl  = signal.stopLoss;
+
+        const hitTP  = signal.direction === "BUY" ? price >= tp1 : price <= tp1;
+        const hitSL  = signal.direction === "BUY" ? price <= sl  : price >= sl;
+
+        if (!hitTP && !hitSL) continue;
+
+        const status: "won" | "lost" = hitTP ? "won" : "lost";
+        const exitPrice = hitTP ? tp1 : sl;
+        const pnl = parseFloat((
+          signal.direction === "BUY"
+            ? ((exitPrice - signal.entryPrice) / signal.entryPrice) * 100
+            : ((signal.entryPrice - exitPrice) / signal.entryPrice) * 100
+        ).toFixed(2));
+
+        await db.update(tradingSignalsTable)
+          .set({ status, pnl })
+          .where(eq(tradingSignalsTable.id, signal.id));
+
+        const emoji   = status === "won" ? "✅" : "❌";
+        const pnlStr  = `${pnl > 0 ? "+" : ""}${pnl}%`;
+        addLog(`${emoji} ${signal.pair} ${signal.direction} → ${status.toUpperCase()} (PNL: ${pnlStr}) | Entry: ${signal.entryPrice} → Exit: ${exitPrice.toFixed(signal.pair.includes("USD") && !signal.pair.includes("USDT") ? 5 : 2)}`, "signal");
+
+        // ── WhatsApp notification ─────────────────────────────────────────────
+        const waOk = getWAStatus().connected;
+        if (waOk) {
+          const resultMsg = status === "won"
+            ? `✅ *SIGNAL RESULT — ${signal.pair} ${signal.direction}*\n\n🎯 *TARGET HIT!* ${pnlStr} profit\n📍 Entry: ${signal.entryPrice}\n🎯 TP1: ${tp1}\n💰 Closed at: ${exitPrice.toFixed(2)}\n\n🔥 Signal delivered by *CommandLine AI*`
+            : `❌ *SIGNAL RESULT — ${signal.pair} ${signal.direction}*\n\n🛑 *STOP LOSS HIT* (${pnlStr})\n📍 Entry: ${signal.entryPrice}\n🛑 SL: ${sl}\n💼 Closed at: ${exitPrice.toFixed(2)}\n\n⚠️ Risk managed. Next setup incoming — *CommandLine AI*`;
+
+          try {
+            const groupInfo = await getSignalGroupInfo();
+            if (groupInfo.exists) await sendMessageToGroup(resultMsg);
+          } catch {}
+
+          try {
+            const subs = await db.select().from(subscribersTable).where(eq(subscribersTable.status, "active"));
+            for (const sub of subs) {
+              try { await sendTypingMessages(sub.phone, [resultMsg], 0); } catch {}
+            }
+          } catch {}
+        }
+      } catch (e: any) {
+        addLog(`⚠ Could not check ${signal.pair}: ${e?.message ?? "unknown"}`, "error");
+      }
+    }
+  } catch (e: any) {
+    addLog(`❌ Result checker error: ${e?.message ?? "unknown"}`, "error");
+  }
 }
 
 // ── Pair type detection ───────────────────────────────────────────────────────
@@ -357,6 +428,9 @@ function buildMessages(signal: ScoredSignal): string[] {
 async function scanOnce() {
   if (!state.active) return;
 
+  // Check existing active signals first
+  await checkSignalResults().catch(e => addLog(`⚠ Result check error: ${e?.message ?? "unknown"}`, "error"));
+
   state.lastScanAt    = new Date().toISOString();
   state.nextScanAt    = new Date(Date.now() + state.intervalMinutes * 60 * 1000).toISOString();
   state.currentAction = "Scanning all pairs…";
@@ -522,11 +596,19 @@ export function startBot(opts: {
     });
   }, state.intervalMinutes * 60 * 1000);
 
+  // Independent result checker — runs every 2 minutes between scans
+  resultTimerId = setInterval(() => {
+    checkSignalResults().catch(e => {
+      addLog(`⚠ Result check error: ${e?.message ?? "unknown"}`, "error");
+    });
+  }, 2 * 60 * 1000);
+
   logger.info(state, "Bot: started in autonomous mode");
 }
 
 export function stopBot() {
   if (timerId) { clearInterval(timerId); timerId = null; }
+  if (resultTimerId) { clearInterval(resultTimerId); resultTimerId = null; }
   state.active        = false;
   state.nextScanAt    = null;
   state.currentAction = null;
