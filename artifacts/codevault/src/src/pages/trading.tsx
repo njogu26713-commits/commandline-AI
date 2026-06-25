@@ -107,7 +107,14 @@ export default function Trading() {
       const r = await fetch("/api/whatsapp/groups/create", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: "CommandLine Signals 🔥" }) });
       const d = await r.json();
       if (!r.ok) {
-        toast({ title: "Group creation failed", description: d.error ?? "Failed to create group", variant: "destructive" });
+        const isNoSubs = d.error === "no_subscribers";
+        toast({
+          title: isNoSubs ? "No subscribers yet" : "Group creation failed",
+          description: isNoSubs
+            ? "Add at least one active subscriber first, then create the group."
+            : d.error ?? d.message ?? "Failed to create group",
+          variant: "destructive",
+        });
       } else {
         refetchGroup();
         toast({ title: "✅ Group created!", description: `${d.members} subscriber${d.members !== 1 ? "s" : ""} added to the group.` });

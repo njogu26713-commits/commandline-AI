@@ -484,9 +484,21 @@ function toJid(phone: string) {
 
 export async function createSignalGroup(name: string, phones: string[]) {
   if (!state.sock || !state.connected) throw new Error("WhatsApp not connected");
-  if (phones.length === 0) throw new Error("No active subscribers found — add subscribers before creating a group");
+  if (phones.length === 0) throw new Error("NO_SUBSCRIBERS");
   const participants = phones.map(toJid);
-  const { id: groupJid } = await state.sock.groupCreate(name, participants);
+  let groupJid: string;
+  try {
+    const res = await state.sock.groupCreate(name, participants);
+    groupJid = res.id;
+  } catch (e: any) {
+    // Translate raw Baileys/WA errors into human-readable messages
+    const msg: string = e?.message ?? String(e);
+    if (msg.includes("not-authorized") || msg.includes("403"))
+      throw new Error("WhatsApp rejected the request — make sure your number can create groups");
+    if (msg.includes("not-on-whatsapp") || msg.includes("invalid-participants"))
+      throw new Error("One or more subscriber numbers are not on WhatsApp");
+    throw new Error(`WhatsApp group creation failed: ${msg}`);
+  }
   state.groupJid  = groupJid;
   state.groupName = name;
   try {
