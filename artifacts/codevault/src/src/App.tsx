@@ -13,6 +13,7 @@ import Trading from "@/pages/trading";
 import Profile from "@/pages/profile";
 import Settings from "@/pages/settings";
 import Brokers from "@/pages/brokers";
+import Subscribe from "@/pages/subscribe";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -23,7 +24,7 @@ const queryClient = new QueryClient({
   },
 });
 
-function Router() {
+function AppRoutes() {
   return (
     <Switch>
       <Route path="/" component={Trading} />
@@ -44,9 +45,16 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-            <Layout>
-              <Router />
-            </Layout>
+            <Switch>
+              {/* Public signup page — no sidebar */}
+              <Route path="/subscribe" component={Subscribe} />
+              {/* All other pages use the sidebar layout */}
+              <Route>
+                <Layout>
+                  <AppRoutes />
+                </Layout>
+              </Route>
+            </Switch>
           </WouterRouter>
           <Toaster />
         </TooltipProvider>
