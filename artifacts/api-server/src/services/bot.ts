@@ -84,6 +84,92 @@ async function getRecentSignals(limit = 10) {
   } catch { return []; }
 }
 
+// ── Gemini-powered result message generator ───────────────────────────────────
+async function generateResultMessage(signal: {
+  pair: string;
+  direction: string;
+  entryPrice: number;
+  exitPrice: number;
+  tp1: number;
+  sl: number;
+  pnl: number;
+  status: "won" | "lost";
+}): Promise<string[]> {
+  const apiKey = process.env.GEMINI_API_KEY;
+  const pnlStr = `${signal.pnl > 0 ? "+" : ""}${signal.pnl}%`;
+
+  if (apiKey) {
+    try {
+      const { GoogleGenerativeAI } = await import("@google/generative-ai");
+      const genAI = new GoogleGenerativeAI(apiKey);
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash-lite" });
+
+      const prompt = signal.status === "won"
+        ? `You are the admin of a WhatsApp trading signals group called CommandLine Signals. A signal just hit its target — it's a WIN! Post 2 short, hype messages to the group the way a real human admin would type, not a bot.
+
+Signal result:
+- Pair: ${signal.pair}
+- Direction: ${signal.direction}
+- Entry: ${signal.entryPrice}
+- Target hit: ${signal.tp1}
+- PNL: ${pnlStr}
+
+Rules:
+- Exactly 2 messages. Each one 1–3 lines max.
+- Message 1: Explosive win celebration. Build hype. Use emojis naturally.
+- Message 2: Brief stats recap (pair, direction, PNL). Remind them the bot is watching and more signals are coming.
+- Sound human and excited, not formal or robotic.
+- Do NOT use markdown headers or bullet lists.
+
+Respond ONLY with a valid JSON array of strings:
+["msg1", "msg2"]`
+        : `You are the admin of a WhatsApp trading signals group called CommandLine Signals. A signal just hit its stop-loss — it's a LOSS. Post 2 short, composed messages to the group the way a calm, professional human admin would type.
+
+Signal result:
+- Pair: ${signal.pair}
+- Direction: ${signal.direction}
+- Entry: ${signal.entryPrice}
+- Stop hit: ${signal.sl}
+- PNL: ${pnlStr}
+
+Rules:
+- Exactly 2 messages. Each one 1–3 lines max.
+- Message 1: Acknowledge the stop loss calmly. No panic. Losses are part of the game.
+- Message 2: Reassure the group — risk was managed, next setup is coming. Keep morale up.
+- Sound human and grounded, not robotic or over-apologetic.
+- Do NOT use markdown headers or bullet lists.
+
+Respond ONLY with a valid JSON array of strings:
+["msg1", "msg2"]`;
+
+      const result = await model.generateContent(prompt);
+      const text   = result.response.text().trim();
+      const match  = text.match(/\[[\s\S]*\]/);
+      if (match) {
+        const msgs: unknown = JSON.parse(match[0]);
+        if (Array.isArray(msgs) && msgs.length >= 1 && (msgs as any[]).every((m: unknown) => typeof m === "string")) {
+          return msgs as string[];
+        }
+      }
+    } catch (e) {
+      console.warn("[result-msg] Gemini unavailable — falling back to template:", (e as any)?.message ?? e);
+    }
+  }
+
+  // ── Fallback templates ────────────────────────────────────────────────────
+  const pnlStr2 = `${signal.pnl > 0 ? "+" : ""}${signal.pnl}%`;
+  if (signal.status === "won") {
+    return [
+      `✅ TARGET HIT! ${signal.pair} ${signal.direction} — ${pnlStr2} profit! 🔥`,
+      `📍 Entry: ${signal.entryPrice} → TP: ${signal.tp1}\nBot stays watching. Next signal incoming 👀`,
+    ];
+  }
+  return [
+    `🛑 Stop loss hit on ${signal.pair} ${signal.direction} (${pnlStr2}). Part of the game.`,
+    `Risk was managed. Stay focused — next setup is loading 💪`,
+  ];
+}
+
 // ── Auto result checker ───────────────────────────────────────────────────────
 async function checkSignalResults() {
   try {
@@ -129,19 +215,26 @@ async function checkSignalResults() {
         // ── WhatsApp notification ─────────────────────────────────────────────
         const waOk = getWAStatus().connected;
         if (waOk) {
-          const resultMsg = status === "won"
-            ? `✅ *SIGNAL RESULT — ${signal.pair} ${signal.direction}*\n\n🎯 *TARGET HIT!* ${pnlStr} profit\n📍 Entry: ${signal.entryPrice}\n🎯 TP1: ${tp1}\n💰 Closed at: ${exitPrice.toFixed(2)}\n\n🔥 Signal delivered by *CommandLine AI*`
-            : `❌ *SIGNAL RESULT — ${signal.pair} ${signal.direction}*\n\n🛑 *STOP LOSS HIT* (${pnlStr})\n📍 Entry: ${signal.entryPrice}\n🛑 SL: ${sl}\n💼 Closed at: ${exitPrice.toFixed(2)}\n\n⚠️ Risk managed. Next setup incoming — *CommandLine AI*`;
+          const resultMsgs = await generateResultMessage({
+            pair: signal.pair,
+            direction: signal.direction,
+            entryPrice: signal.entryPrice,
+            exitPrice,
+            tp1,
+            sl,
+            pnl,
+            status,
+          });
 
           try {
             const groupInfo = await getSignalGroupInfo();
-            if (groupInfo.exists) await sendMessageToGroup(resultMsg);
+            if (groupInfo.exists) await sendTypingMessagesToGroup(resultMsgs, 1000);
           } catch {}
 
           try {
             const subs = await db.select().from(subscribersTable).where(eq(subscribersTable.status, "active"));
             for (const sub of subs) {
-              try { await sendTypingMessages(sub.phone, [resultMsg], 0); } catch {}
+              try { await sendTypingMessages(sub.phone, resultMsgs, 600); } catch {}
             }
           } catch {}
         }
