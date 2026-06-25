@@ -13,7 +13,7 @@ import {
   MessageCircle, Wifi, WifiOff, Sparkles, Loader2, CheckCircle2,
   Bitcoin, RefreshCw, Bot, Play, Pause, FlaskConical,
   ThumbsUp, ThumbsDown, BarChart2, Clock, AlertCircle, XCircle,
-  CalendarDays, Target, Timer,
+  CalendarDays, Target, Timer, Link as LinkIcon,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { PageTransition } from "@/components/page-transition";
@@ -90,6 +90,9 @@ export default function Trading() {
   const [showQr, setShowQr]     = useState(false);
   const [testingWA, setTestingWA] = useState(false);
   const [creatingGroup, setCreatingGroup] = useState(false);
+  const [showLinkDialog, setShowLinkDialog] = useState(false);
+  const [linkInput, setLinkInput]         = useState("");
+  const [linking, setLinking]             = useState(false);
 
   const { data: groupInfo, refetch: refetchGroup } = useQuery<{
     exists: boolean; groupJid: string | null; name: string | null;
@@ -100,6 +103,31 @@ export default function Trading() {
     refetchInterval: 30000,
     enabled: waStatus.connected,
   });
+
+  const handleLinkGroup = async () => {
+    if (!linkInput.trim()) return;
+    setLinking(true);
+    try {
+      const r = await fetch("/api/whatsapp/groups/link", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inviteLink: linkInput.trim() }),
+      });
+      const d = await r.json();
+      if (!r.ok) {
+        toast({ title: "Link failed", description: d.error ?? "Could not link group", variant: "destructive" });
+      } else {
+        setShowLinkDialog(false);
+        setLinkInput("");
+        refetchGroup();
+        toast({ title: "✅ Group linked!", description: `"${d.name}" connected with ${d.size} members.` });
+      }
+    } catch (e: any) {
+      toast({ title: "Network error", description: e?.message ?? "Could not reach the server", variant: "destructive" });
+    } finally {
+      setLinking(false);
+    }
+  };
 
   const handleCreateGroup = async () => {
     setCreatingGroup(true);
@@ -252,6 +280,38 @@ export default function Trading() {
 
   return (
     <PageTransition className="space-y-5 max-w-7xl mx-auto">
+
+      {/* Link Existing Group Dialog */}
+      <Dialog open={showLinkDialog} onOpenChange={v => { setShowLinkDialog(v); if (!v) setLinkInput(""); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <LinkIcon className="w-4 h-4 text-green-500" /> Link Existing WhatsApp Group
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-2">
+            <div className="text-sm text-muted-foreground space-y-1.5">
+              <p>1. Create a group on your phone manually</p>
+              <p>2. Add the bot's WhatsApp number to the group</p>
+              <p>3. Open group info → <strong>Invite Link</strong> → Copy</p>
+              <p>4. Paste the link below</p>
+            </div>
+            <input
+              className="w-full border border-border rounded-md px-3 py-2 text-sm bg-background focus:outline-none focus:ring-2 focus:ring-green-500/50"
+              placeholder="https://chat.whatsapp.com/XXXXXX"
+              value={linkInput}
+              onChange={e => setLinkInput(e.target.value)}
+              onKeyDown={e => e.key === "Enter" && handleLinkGroup()}
+            />
+            <Button
+              onClick={handleLinkGroup}
+              disabled={linking || !linkInput.trim()}
+              className="bg-green-600 hover:bg-green-700 text-white w-full">
+              {linking ? <><Loader2 className="w-4 h-4 animate-spin mr-2" />Linking…</> : "Link Group"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* QR Dialog */}
       <Dialog open={showQr} onOpenChange={v => { setShowQr(v); if (!v) stopPoll(); }}>
@@ -527,10 +587,16 @@ export default function Trading() {
                       <p className="text-[11px] text-muted-foreground mt-0.5">No group yet — create one to share signals</p>
                     )}
                   </div>
-                  <Button size="sm" variant="outline" onClick={handleCreateGroup} disabled={creatingGroup}
-                    className="text-xs flex-shrink-0 gap-1.5">
-                    {creatingGroup ? <><Loader2 className="w-3 h-3 animate-spin" /> Creating…</> : groupInfo?.exists ? "Recreate" : "Create Group"}
-                  </Button>
+                  <div className="flex gap-1.5 flex-shrink-0">
+                    <Button size="sm" variant="outline" onClick={() => setShowLinkDialog(true)}
+                      className="text-xs gap-1" title="Link an existing group you created manually">
+                      <LinkIcon className="w-3 h-3" /> Link
+                    </Button>
+                    <Button size="sm" variant="outline" onClick={handleCreateGroup} disabled={creatingGroup}
+                      className="text-xs gap-1.5">
+                      {creatingGroup ? <><Loader2 className="w-3 h-3 animate-spin" /> Creating…</> : groupInfo?.exists ? "Recreate" : "Create"}
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}

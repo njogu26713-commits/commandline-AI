@@ -8,6 +8,7 @@ import {
   getWAStatus,
   broadcastSignal,
   createSignalGroup,
+  linkGroupByInvite,
   addToSignalGroup,
   removeFromSignalGroup,
   getSignalGroupInfo,
@@ -113,6 +114,19 @@ router.get("/whatsapp/groups/info", async (_req, res) => {
     res.json(info);
   } catch (err: any) {
     res.status(500).json({ error: err.message ?? "Failed to get group info" });
+  }
+});
+
+router.post("/whatsapp/groups/link", async (req, res) => {
+  try {
+    const status = getWAStatus();
+    if (!status.connected) return res.status(400).json({ error: "WhatsApp not connected" });
+    const { inviteLink } = req.body;
+    if (!inviteLink) return res.status(400).json({ error: "inviteLink is required" });
+    const result = await linkGroupByInvite(inviteLink);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message ?? "Failed to link group" });
   }
 });
 

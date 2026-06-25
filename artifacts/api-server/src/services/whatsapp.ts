@@ -524,6 +524,36 @@ export async function removeFromSignalGroup(phones: string[]) {
   return { removed: phones.length };
 }
 
+export async function linkGroupByInvite(inviteLink: string) {
+  if (!state.sock || !state.connected) throw new Error("WhatsApp not connected");
+
+  // Accept full URL like https://chat.whatsapp.com/ABC123XYZ or just the code
+  const match = inviteLink.trim().match(/(?:chat\.whatsapp\.com\/|^)([A-Za-z0-9]+)$/);
+  if (!match) throw new Error("Invalid invite link — paste a link like https://chat.whatsapp.com/XXXXXX");
+  const code = match[1];
+
+  let meta: any;
+  try {
+    meta = await state.sock.groupGetInviteInfo(code);
+  } catch (e: any) {
+    const msg = e?.message ?? String(e);
+    if (msg.includes("invalid") || msg.includes("404") || msg.includes("gone"))
+      throw new Error("Invite link is invalid or expired — generate a new one from the group");
+    throw new Error(`Could not fetch group info: ${msg}`);
+  }
+
+  state.groupJid       = meta.id;
+  state.groupName      = meta.subject ?? "Signal Group";
+  state.groupInviteCode = code;
+
+  return {
+    groupJid: state.groupJid,
+    name:     state.groupName,
+    size:     meta.participants?.length ?? 0,
+    inviteLink: `https://chat.whatsapp.com/${code}`,
+  };
+}
+
 export async function getSignalGroupInfo() {
   if (!state.groupJid || !state.sock || !state.connected) {
     return { groupJid: null, name: null, inviteLink: null, size: 0, exists: false };
