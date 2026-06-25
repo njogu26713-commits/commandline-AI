@@ -124,35 +124,36 @@ router.post("/ai/sessions/:id/messages", async (req, res) => {
         .map(r => r.value.context)
         .join("\n\n");
 
-      const { GoogleGenerativeAI } = await import("@google/generative-ai");
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({
-        model: "gemini-2.0-flash",
-        systemInstruction: SYSTEM_PROMPT,
-      });
+      const { GoogleGenAI } = await import("@google/genai");
+      const genAI = new GoogleGenAI({ apiKey });
 
       const chatHistory = history.slice(0, -1).slice(-8).map(m => ({
         role: m.role === "user" ? "user" as const : "model" as const,
         parts: [{ text: m.content }],
       }));
 
-      const chat = model.startChat({ history: chatHistory });
-
       const userPrompt = marketContext
         ? `USER REQUEST: ${content}\n\n## LIVE MULTI-TIMEFRAME MARKET DATA (just fetched from Binance):\n\n${marketContext}\n\nBased on this data, provide your expert analysis and signal(s).`
         : content;
 
-      const result = await chat.sendMessage(userPrompt);
-      aiContent = result.response.text();
+      const chat = genAI.chats.create({
+        model: "gemini-2.0-flash",
+        history: chatHistory,
+        config: { systemInstruction: SYSTEM_PROMPT },
+      });
+
+      const result = await chat.sendMessage({ message: userPrompt });
+      aiContent = result.text ?? "";
 
       // Auto-title on first user message
       if (history.length <= 2) {
         try {
-          const titleRes = await model.generateContent(
-            `Generate a very short session title (max 5 words, no quotes) for this trading chat. User said: "${content}"`
-          );
-          const newTitle = titleRes.response.text().trim().slice(0, 50);
-          await db.update(aiSessionsTable).set({ title: newTitle, updatedAt: new Date() }).where(eq(aiSessionsTable.id, id));
+          const titleRes = await genAI.models.generateContent({
+            model: "gemini-2.0-flash",
+            contents: `Generate a very short session title (max 5 words, no quotes) for this trading chat. User said: "${content}"`,
+          });
+          const newTitle = (titleRes.text ?? "").trim().slice(0, 50);
+          if (newTitle) await db.update(aiSessionsTable).set({ title: newTitle, updatedAt: new Date() }).where(eq(aiSessionsTable.id, id));
         } catch {}
       }
     }
