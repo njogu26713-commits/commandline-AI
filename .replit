@@ -85,4 +85,3 @@ channel = "stable-25_05"
 [userenv]
 
 [userenv.shared]
-GROQ_API_KEY = "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"
