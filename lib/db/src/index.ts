@@ -1,25 +1,16 @@
-import mongoose from "mongoose";
+import { drizzle } from "drizzle-orm/node-postgres";
+import pg from "pg";
+import * as schema from "./schema";
 
-// Configure global toJSON transform: _id → id, strip __v
-mongoose.set("toJSON", {
-  virtuals: true,
-  transform: (_doc: any, ret: any) => {
-    ret.id = ret._id?.toString();
-    delete ret._id;
-    delete ret.__v;
-    return ret;
-  },
-});
+const { Pool } = pg;
 
-let connected = false;
-
-export async function connectDB(): Promise<void> {
-  if (connected) return;
-  const uri = process.env.MONGODB_URI;
-  if (!uri) throw new Error("MONGODB_URI must be set.");
-  await mongoose.connect(uri);
-  connected = true;
+if (!process.env.DATABASE_URL) {
+  throw new Error(
+    "DATABASE_URL must be set. Did you forget to provision a database?",
+  );
 }
 
-export { mongoose };
-export * from "./schema/index.js";
+export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+export const db = drizzle(pool, { schema });
+
+export * from "./schema";
