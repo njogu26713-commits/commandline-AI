@@ -5,3 +5,4 @@ export * from "./marketplace";
 export * from "./trading";
 export type { Broker } from "./trading";
 export * from "./users";
+export * from "./trading-accounts";

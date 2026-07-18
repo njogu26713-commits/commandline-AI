@@ -13,6 +13,7 @@ import mpesaRouter from "./mpesa";
 import botRouter from "./bot";
 import portalRouter from "./portal";
 import brokersRouter from "./brokers";
+import tradingAccountsRouter from "./trading-accounts";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use(mpesaRouter);
 router.use(botRouter);
 router.use(portalRouter);
 router.use(brokersRouter);
+router.use(tradingAccountsRouter);
 
 export default router;

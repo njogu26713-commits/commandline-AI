@@ -14,6 +14,7 @@ import Profile from "@/pages/profile";
 import Settings from "@/pages/settings";
 import Brokers from "@/pages/brokers";
 import Subscribe from "@/pages/subscribe";
+import TradingAccounts from "@/pages/trading-accounts";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -34,6 +35,7 @@ function AppRoutes() {
       <Route path="/profile" component={Profile} />
       <Route path="/settings" component={Settings} />
       <Route path="/brokers" component={Brokers} />
+      <Route path="/trading-accounts" component={TradingAccounts} />
       <Route component={NotFound} />
     </Switch>
   );
