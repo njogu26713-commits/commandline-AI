@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { db } from "@workspace/db";
-import { tradingAccountsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { tradingAccountsTable, tradeExecutionsTable } from "@workspace/db";
+import { eq, desc } from "drizzle-orm";
 
 const router = Router();
 
@@ -244,6 +244,21 @@ router.post("/trading-accounts/:id/sync", async (req, res) => {
   } catch (err: any) {
     req.log.error(err);
     res.status(500).json({ error: err.message ?? "Sync failed" });
+  }
+});
+
+// ── GET /api/trading-accounts/:id/trades ─────────────────────────────────────
+router.get("/trading-accounts/:id/trades", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const trades = await db.select().from(tradeExecutionsTable)
+      .where(eq(tradeExecutionsTable.accountId, id))
+      .orderBy(desc(tradeExecutionsTable.executedAt))
+      .limit(50);
+    res.json(trades.map(t => ({ ...t, executedAt: t.executedAt.toISOString() })));
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 

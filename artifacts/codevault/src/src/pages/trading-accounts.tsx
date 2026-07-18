@@ -112,6 +112,14 @@ function useSync(id: number) {
   });
 }
 
+function useTrades(id: number) {
+  return useQuery<any[]>({
+    queryKey: ["account-trades", id],
+    queryFn: () => fetch(`/api/trading-accounts/${id}/trades`).then(r => r.json()),
+    refetchInterval: 5000,
+  });
+}
+
 function useDisconnect() {
   const qc = useQueryClient();
   return useMutation({
@@ -182,6 +190,7 @@ function AccountCard({ account }: { account: TradingAccount }) {
   const sync = useSync(account.id);
   const disconnect = useDisconnect();
   const updateAccount = useUpdateAccount();
+  const { data: trades = [] } = useTrades(account.id);
   const cur = account.currency ?? "USD";
   const profit = account.profit ?? 0;
   const platform = PLATFORMS.find(p => p.id === account.platform);
@@ -384,6 +393,51 @@ function AccountCard({ account }: { account: TradingAccount }) {
             </div>
           )}
         </div>
+        {/* Trade history */}
+        {trades.length > 0 && (
+          <div className="space-y-2">
+            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+              Executed Trades ({trades.length})
+            </div>
+            <div className="rounded-xl border overflow-hidden">
+              <table className="w-full text-xs">
+                <thead className="bg-muted/50">
+                  <tr>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Symbol</th>
+                    <th className="text-left px-3 py-2 font-medium text-muted-foreground">Dir</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Lots</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Entry</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">SL</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">TP</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Risked</th>
+                    <th className="text-right px-3 py-2 font-medium text-muted-foreground">Time</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {trades.map((t: any) => (
+                    <tr key={t.id} className="hover:bg-muted/30 transition-colors">
+                      <td className="px-3 py-2 font-semibold">{t.symbol}</td>
+                      <td className="px-3 py-2">
+                        <span className={`font-bold ${t.direction === "BUY" ? "text-green-500" : "text-red-500"}`}>
+                          {t.direction}
+                        </span>
+                      </td>
+                      <td className="px-3 py-2 text-right font-mono">{t.volume}</td>
+                      <td className="px-3 py-2 text-right font-mono">{t.entryPrice?.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right font-mono text-red-400">{t.stopLoss?.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right font-mono text-green-400">{t.takeProfit?.toLocaleString()}</td>
+                      <td className="px-3 py-2 text-right font-semibold">${t.riskAmount?.toFixed(2)}</td>
+                      <td className="px-3 py-2 text-right text-muted-foreground">
+                        {new Date(t.executedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                        {t.devMode === "true" && <span className="ml-1 text-[9px] bg-yellow-500/20 text-yellow-600 px-1 rounded">DEV</span>}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   );

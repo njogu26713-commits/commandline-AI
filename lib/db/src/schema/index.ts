@@ -6,3 +6,4 @@ export * from "./trading";
 export type { Broker } from "./trading";
 export * from "./users";
 export * from "./trading-accounts";
+export * from "./trade-executions";
