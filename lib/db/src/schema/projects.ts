@@ -1,33 +1,54 @@
-import { pgTable, text, serial, integer, boolean, timestamp, real } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod/v4";
+import { Schema, model } from "mongoose";
 
-export const projectsTable = pgTable("projects", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  description: text("description"),
-  status: text("status").notNull().default("active"),
-  language: text("language"),
-  stars: integer("stars").notNull().default(0),
-  forks: integer("forks").notNull().default(0),
-  isPrivate: boolean("is_private").notNull().default(false),
-  deploymentUrl: text("deployment_url"),
-  githubUrl: text("github_url"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+// ── Project ───────────────────────────────────────────────────────────────────
+export interface Project {
+  id: string;
+  name: string;
+  description?: string | null;
+  status: string;
+  language?: string | null;
+  stars: number;
+  forks: number;
+  isPrivate: boolean;
+  deploymentUrl?: string | null;
+  githubUrl?: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const projectSchema = new Schema(
+  {
+    name:          { type: String, required: true },
+    description:   { type: String, default: null },
+    status:        { type: String, default: "active" },
+    language:      { type: String, default: null },
+    stars:         { type: Number, default: 0 },
+    forks:         { type: Number, default: 0 },
+    isPrivate:     { type: Boolean, default: false },
+    deploymentUrl: { type: String, default: null },
+    githubUrl:     { type: String, default: null },
+  },
+  { timestamps: true }
+);
+
+export const ProjectModel = model("Project", projectSchema);
+
+// ── Project Template ──────────────────────────────────────────────────────────
+export interface ProjectTemplate {
+  id: string;
+  name: string;
+  description: string;
+  language: string;
+  category: string;
+  stars: number;
+}
+
+const projectTemplateSchema = new Schema({
+  name:        { type: String, required: true },
+  description: { type: String, required: true },
+  language:    { type: String, required: true },
+  category:    { type: String, required: true },
+  stars:       { type: Number, default: 0 },
 });
 
-export const insertProjectSchema = createInsertSchema(projectsTable).omit({ id: true, createdAt: true, updatedAt: true });
-export type InsertProject = z.infer<typeof insertProjectSchema>;
-export type Project = typeof projectsTable.$inferSelect;
-
-export const projectTemplatesTable = pgTable("project_templates", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  description: text("description").notNull(),
-  language: text("language").notNull(),
-  category: text("category").notNull(),
-  stars: integer("stars").notNull().default(0),
-});
-
-export type ProjectTemplate = typeof projectTemplatesTable.$inferSelect;
+export const ProjectTemplateModel = model("ProjectTemplate", projectTemplateSchema);

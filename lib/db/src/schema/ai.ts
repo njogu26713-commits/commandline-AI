@@ -1,28 +1,42 @@
-import { pgTable, text, serial, integer, timestamp } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod/v4";
+import { Schema, model } from "mongoose";
 
-export const aiSessionsTable = pgTable("ai_sessions", {
-  id: serial("id").primaryKey(),
-  title: text("title").notNull(),
-  projectId: integer("project_id"),
-  messageCount: integer("message_count").notNull().default(0),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-  updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+// ── AI Session ────────────────────────────────────────────────────────────────
+export interface AiSession {
+  id: string;
+  title: string;
+  projectId?: number | null;
+  messageCount: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
 
-export const insertAiSessionSchema = createInsertSchema(aiSessionsTable).omit({ id: true, createdAt: true, updatedAt: true, messageCount: true });
-export type InsertAiSession = z.infer<typeof insertAiSessionSchema>;
-export type AiSession = typeof aiSessionsTable.$inferSelect;
+const aiSessionSchema = new Schema(
+  {
+    title:        { type: String, required: true },
+    projectId:    { type: Number, default: null },
+    messageCount: { type: Number, default: 0 },
+  },
+  { timestamps: true }
+);
 
-export const aiMessagesTable = pgTable("ai_messages", {
-  id: serial("id").primaryKey(),
-  sessionId: integer("session_id").notNull(),
-  role: text("role").notNull(),
-  content: text("content").notNull(),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
+export const AiSessionModel = model("AiSession", aiSessionSchema);
 
-export const insertAiMessageSchema = createInsertSchema(aiMessagesTable).omit({ id: true, createdAt: true });
-export type InsertAiMessage = z.infer<typeof insertAiMessageSchema>;
-export type AiMessage = typeof aiMessagesTable.$inferSelect;
+// ── AI Message ─────────────────────────────────────────────────────────────────
+export interface AiMessage {
+  id: string;
+  sessionId: string;
+  role: string;
+  content: string;
+  createdAt: Date;
+}
+
+const aiMessageSchema = new Schema(
+  {
+    sessionId: { type: Schema.Types.ObjectId, required: true, ref: "AiSession" },
+    role:      { type: String, required: true },
+    content:   { type: String, required: true },
+  },
+  { timestamps: { createdAt: true, updatedAt: false } }
+);
+
+export const AiMessageModel = model("AiMessage", aiMessageSchema);
