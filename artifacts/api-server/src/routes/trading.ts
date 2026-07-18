@@ -181,6 +181,27 @@ router.get("/trading/market/:pair", async (req, res) => {
   }
 });
 
+// ── Auto-trade hook ───────────────────────────────────────────────────────────
+async function triggerAutoTrade(signal: {
+  pair: string; category: string; direction: string;
+  entryPrice: number; targetPrice: number; stopLoss: number; confidence: number;
+}) {
+  try {
+    const { executeOnConnectedAccounts } = await import("../services/auto-trade.js");
+    const results = await executeOnConnectedAccounts(signal);
+    for (const r of results) {
+      if (r.success) {
+        const tag = r.devMode ? "[DEV] " : "";
+        console.info(`${tag}Auto-trade executed: ${r.direction} ${r.symbol} ×${r.volume} lots on ${r.broker ?? "broker"} #${r.accountNumber} | Order: ${r.orderId}`);
+      } else {
+        console.error(`Auto-trade failed on #${r.accountNumber}: ${r.error}`);
+      }
+    }
+  } catch (e: any) {
+    console.error("Auto-trade hook error:", e?.message);
+  }
+}
+
 // ── Helper: save signal to DB then auto-broadcast via WhatsApp ────────────────
 async function saveAndBroadcast(signal: {
   pair: string; category: string; direction: string;
@@ -227,6 +248,14 @@ async function saveAndBroadcast(signal: {
       }
     } catch {}
   }
+
+  // ── Auto-execute on connected MT5 accounts ───────────────────────────────
+  triggerAutoTrade({
+    pair: signal.pair, category: signal.category,
+    direction: signal.direction, entryPrice: signal.entryPrice,
+    targetPrice: signal.targetPrice, stopLoss: signal.stopLoss,
+    confidence: signal.confidence,
+  });
 
   return { saved, broadcast };
 }

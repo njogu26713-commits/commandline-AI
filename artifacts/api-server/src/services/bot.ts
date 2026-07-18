@@ -1,5 +1,6 @@
 import { db } from "@workspace/db";
 import { tradingSignalsTable, subscribersTable } from "@workspace/db";
+import { executeOnConnectedAccounts } from "./auto-trade.js";
 import { eq, desc } from "drizzle-orm";
 import { getDeepAnalysis, getForexRate, getTicker, getMarketData } from "./binance.js";
 import { sendTypingMessages, getWAStatus, sendMessageToGroup, sendTypingMessagesToGroup, generateGroupSignalMessages, getSignalGroupInfo } from "./whatsapp.js";
@@ -504,6 +505,26 @@ async function scanOnce() {
   state.signalsToday++;
   state.currentAction  = `Signal sent: ${best.pair} ${best.direction} ${best.confidence}%`;
   addLog(`💾 Signal #${saved.id} saved — ${best.pair} ${best.direction} @ ${best.entryPrice.toFixed(2)}`, "signal");
+
+  // ── Auto-execute on connected MT5 accounts ──────────────────────────────────
+  try {
+    const category = isForexPair(best.pair) ? "forex" : "crypto";
+    const trades = await executeOnConnectedAccounts({
+      pair: best.pair, category, direction: best.direction,
+      entryPrice: best.entryPrice, targetPrice: best.targetPrice,
+      stopLoss: best.stopLoss, confidence: best.confidence,
+    });
+    for (const t of trades) {
+      if (t.success) {
+        const tag = t.devMode ? "[DEV] " : "";
+        addLog(`${tag}🤖 Auto-trade: ${t.direction} ${t.symbol} ×${t.volume} lots on ${t.broker ?? "broker"} #${t.accountNumber}`, "signal");
+      } else {
+        addLog(`⚠ Auto-trade failed on #${t.accountNumber}: ${t.error}`, "error");
+      }
+    }
+  } catch (e: any) {
+    addLog(`⚠ Auto-trade hook error: ${e?.message ?? "unknown"}`, "error");
+  }
 
   // ── Broadcast via WhatsApp ──────────────────────────────────────────────────
   if (!getWAStatus().connected) {

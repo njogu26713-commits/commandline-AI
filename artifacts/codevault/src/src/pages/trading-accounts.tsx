@@ -11,10 +11,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
 import { PageTransition } from "@/components/page-transition";
+import { Switch } from "@/components/ui/switch";
 import {
   Wifi, WifiOff, Link2, RefreshCw, Loader2, Plus, Wallet,
   TrendingUp, TrendingDown, ShieldCheck, BarChart2, Activity,
-  ChevronRight, AlertCircle, CheckCircle2, X, Eye, EyeOff,
+  ChevronRight, AlertCircle, CheckCircle2, X, Eye, EyeOff, Bot,
 } from "lucide-react";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -82,6 +83,19 @@ function useConnect() {
   });
 }
 
+function useUpdateAccount() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, ...data }: { id: number; autoTrade?: boolean; riskPercent?: number }) =>
+      fetch(`/api/trading-accounts/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }).then(async r => { const j = await r.json(); if (!r.ok) throw new Error(j.error); return j; }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["trading-accounts"] }),
+  });
+}
+
 function useSync(id: number) {
   const qc = useQueryClient();
   return useMutation({
@@ -126,9 +140,25 @@ function AccountCard({ account }: { account: TradingAccount }) {
   const { toast } = useToast();
   const sync = useSync(account.id);
   const disconnect = useDisconnect();
+  const updateAccount = useUpdateAccount();
   const cur = account.currency ?? "USD";
   const profit = account.profit ?? 0;
   const platform = PLATFORMS.find(p => p.id === account.platform);
+  const autoTradeOn = account.autoTrade === "true";
+
+  const handleAutoTradeToggle = async (enabled: boolean) => {
+    try {
+      await updateAccount.mutateAsync({ id: account.id, autoTrade: enabled });
+      toast({
+        title: enabled ? "🤖 Auto-trading enabled" : "Auto-trading paused",
+        description: enabled
+          ? `AI will now execute trades on ${account.broker ?? "your broker"} #${account.accountNumber} automatically.`
+          : "No trades will be placed until you re-enable.",
+      });
+    } catch (e: any) {
+      toast({ title: "Update failed", description: e.message, variant: "destructive" });
+    }
+  };
 
   const handleSync = async () => {
     try {
@@ -218,6 +248,62 @@ function AccountCard({ account }: { account: TradingAccount }) {
           <RefreshCw className="w-3 h-3" />
           Last synced: {sinceSync(account.lastSyncAt)}
           <span className="ml-auto">Margin: {fmt(account.margin, cur)}</span>
+        </div>
+
+        {/* Auto-trade toggle */}
+        <div className={`rounded-xl border-2 p-4 transition-colors ${autoTradeOn ? "border-indigo-500/40 bg-indigo-500/5" : "border-dashed border-border"}`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className={`p-2 rounded-lg ${autoTradeOn ? "bg-indigo-500/15" : "bg-muted"}`}>
+                <Bot className={`w-4 h-4 ${autoTradeOn ? "text-indigo-500" : "text-muted-foreground"}`} />
+              </div>
+              <div>
+                <div className="font-semibold text-sm flex items-center gap-2">
+                  AI Auto-Trading
+                  {autoTradeOn && (
+                    <span className="text-[10px] font-medium text-indigo-500 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/30 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse inline-block" /> ACTIVE
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {autoTradeOn
+                    ? `Executing signals automatically · ${account.riskPercent ?? 1}% risk per trade`
+                    : "Enable to let AI place trades on this account automatically"}
+                </p>
+              </div>
+            </div>
+            <Switch
+              checked={autoTradeOn}
+              onCheckedChange={handleAutoTradeToggle}
+              disabled={updateAccount.isPending}
+              className="data-[state=checked]:bg-indigo-500"
+            />
+          </div>
+
+          {autoTradeOn && (
+            <div className="mt-3 pt-3 border-t border-indigo-500/20 flex items-center gap-3">
+              <span className="text-xs text-muted-foreground">Risk per trade:</span>
+              <div className="flex gap-1.5">
+                {[0.5, 1, 2, 3].map(pct => (
+                  <button
+                    key={pct}
+                    onClick={() => updateAccount.mutate({ id: account.id, riskPercent: pct })}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
+                      (account.riskPercent ?? 1) === pct
+                        ? "border-indigo-500 bg-indigo-500/15 text-indigo-500"
+                        : "border-border text-muted-foreground hover:border-indigo-500/50"
+                    }`}
+                  >
+                    {pct}%
+                  </button>
+                ))}
+              </div>
+              <span className="text-xs text-muted-foreground ml-auto">
+                ≈ {fmt((account.balance ?? 0) * (account.riskPercent ?? 1) / 100, cur)} per trade
+              </span>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

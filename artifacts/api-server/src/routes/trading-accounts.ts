@@ -247,6 +247,24 @@ router.post("/trading-accounts/:id/sync", async (req, res) => {
   }
 });
 
+// ── PATCH /api/trading-accounts/:id ──────────────────────────────────────────
+router.patch("/trading-accounts/:id", async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { autoTrade, riskPercent } = req.body;
+    const updates: Record<string, any> = {};
+    if (typeof autoTrade === "boolean") updates.autoTrade = autoTrade ? "true" : "false";
+    if (typeof riskPercent === "number") updates.riskPercent = Math.min(10, Math.max(0.1, riskPercent));
+    if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Nothing to update" });
+    const [updated] = await db.update(tradingAccountsTable).set(updates).where(eq(tradingAccountsTable.id, id)).returning();
+    if (!updated) return res.status(404).json({ error: "Account not found" });
+    res.json({ ...updated, createdAt: updated.createdAt.toISOString(), lastSyncAt: updated.lastSyncAt?.toISOString() ?? null });
+  } catch (err) {
+    req.log.error(err);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // ── DELETE /api/trading-accounts/:id ─────────────────────────────────────────
 router.delete("/trading-accounts/:id", async (req, res) => {
   try {
