@@ -20,8 +20,9 @@ export const tradingAccountsTable = pgTable("trading_accounts", {
   leverage: integer("leverage"),
   lastSyncAt: timestamp("last_sync_at"),
   // Auto-trading settings
-  autoTrade: text("auto_trade").notNull().default("false"),   // "true" | "false" (text for compat)
-  riskPercent: real("risk_percent").notNull().default(1.0),   // % of balance risked per trade
+  autoTrade: text("auto_trade").notNull().default("false"),   // "true" | "false"
+  riskPercent: real("risk_percent").notNull().default(1.0),   // % of balance per trade
+  tradeAmount: real("trade_amount"),                          // fixed $ amount per trade (overrides riskPercent when set)
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

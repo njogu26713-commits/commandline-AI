@@ -21,15 +21,24 @@ function toMT5Symbol(pair: string, category: string): string {
 }
 
 // ── Lot size calculator ───────────────────────────────────────────────────────
-// Risk a fixed % of balance per trade.
+// If tradeAmount is set: risk exactly that many dollars.
+// Otherwise: risk riskPercent % of balance.
 // lotSize = riskAmount / |entryPrice - stopLoss|
-// Clamped to 0.01 – 2.00 lots, rounded to 2 dp.
-function calcLotSize(balance: number, riskPercent: number, entryPrice: number, stopLoss: number): number {
-  const riskAmount = balance * (riskPercent / 100);
-  const priceDiff  = Math.abs(entryPrice - stopLoss);
+// Clamped to 0.01 – 10.00 lots, rounded to 2 dp.
+function calcLotSize(
+  balance: number,
+  riskPercent: number,
+  entryPrice: number,
+  stopLoss: number,
+  tradeAmount?: number | null,
+): number {
+  const riskAmount = tradeAmount && tradeAmount > 0
+    ? tradeAmount
+    : balance * (riskPercent / 100);
+  const priceDiff = Math.abs(entryPrice - stopLoss);
   if (priceDiff === 0) return 0.01;
   const raw = riskAmount / priceDiff;
-  return Math.min(2.0, Math.max(0.01, Math.round(raw * 100) / 100));
+  return Math.min(10.0, Math.max(0.01, Math.round(raw * 100) / 100));
 }
 
 // ── Place one trade on MetaApi ────────────────────────────────────────────────
@@ -114,7 +123,8 @@ export async function executeOnConnectedAccounts(signal: SignalToTrade): Promise
   for (const account of accounts) {
     const balance     = account.balance ?? 1000;
     const riskPercent = account.riskPercent ?? 1.0;
-    const volume      = calcLotSize(balance, riskPercent, signal.entryPrice, signal.stopLoss);
+    const tradeAmount = account.tradeAmount ?? null;
+    const volume      = calcLotSize(balance, riskPercent, signal.entryPrice, signal.stopLoss, tradeAmount);
 
     const base: Omit<TradeResult, "orderId" | "success" | "error" | "devMode"> = {
       accountId:     account.id,
@@ -127,11 +137,14 @@ export async function executeOnConnectedAccounts(signal: SignalToTrade): Promise
 
     // ── Dev mode (no MetaApi token) ───────────────────────────────────────────
     if (!METAAPI_TOKEN || !account.metaApiAccountId) {
+      const riskDesc = tradeAmount
+        ? `${tradeAmount.toFixed(2)} fixed`
+        : `${riskPercent}% of ${balance.toFixed(2)} = ${(balance * riskPercent / 100).toFixed(2)}`;
       console.info(
         `[auto-trade DEV] Would place ${signal.direction} ${symbol} ×${volume} lots` +
         ` on ${account.broker ?? "broker"} #${account.accountNumber}` +
         ` | SL ${signal.stopLoss} | TP ${signal.targetPrice}` +
-        ` | Risk ${riskPercent}% of $${balance.toFixed(2)} = $${(balance * riskPercent / 100).toFixed(2)}`,
+        ` | Risk ${riskDesc}`,
       );
       results.push({ ...base, orderId: `DEV-${Date.now()}`, success: true, error: null, devMode: true });
       continue;

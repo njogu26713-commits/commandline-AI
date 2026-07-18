@@ -35,6 +35,9 @@ interface TradingAccount {
   profit: number | null;
   currency: string | null;
   leverage: number | null;
+  autoTrade: string;
+  riskPercent: number;
+  tradeAmount: number | null;
   lastSyncAt: string | null;
   createdAt: string;
 }
@@ -133,6 +136,44 @@ function sinceSync(iso: string | null) {
   if (s < 60) return "Just now";
   if (s < 3600) return `${Math.floor(s / 60)}m ago`;
   return `${Math.floor(s / 3600)}h ago`;
+}
+
+// ── Fixed amount input component ─────────────────────────────────────────────
+function FixedAmountInput({ value, currency, balance, onSave }: {
+  value: number; currency: string; balance: number; onSave: (amt: number) => void;
+}) {
+  const [input, setInput] = useState(String(value));
+  const parsed = parseFloat(input);
+  const valid  = !isNaN(parsed) && parsed >= 1;
+  const pct    = balance > 0 ? ((parsed / balance) * 100).toFixed(1) : "0";
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className="relative flex-1 max-w-[180px]">
+        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground font-medium">$</span>
+        <input
+          type="number"
+          min={1}
+          value={input}
+          onChange={e => setInput(e.target.value)}
+          onBlur={() => { if (valid && parsed !== value) onSave(parsed); }}
+          onKeyDown={e => { if (e.key === "Enter" && valid) onSave(parsed); }}
+          className="w-full pl-7 pr-3 py-1.5 rounded-lg border border-indigo-500/40 bg-background text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/40"
+        />
+      </div>
+      <span className="text-xs text-muted-foreground">
+        per trade {balance > 0 && valid && <span className="text-indigo-400">({pct}% of balance)</span>}
+      </span>
+      {valid && parsed !== value && (
+        <button
+          onClick={() => onSave(parsed)}
+          className="text-xs px-2.5 py-1 rounded-lg bg-indigo-500 text-white font-medium hover:bg-indigo-600 transition-colors"
+        >
+          Save
+        </button>
+      )}
+    </div>
+  );
 }
 
 // ── Account card ──────────────────────────────────────────────────────────────
@@ -282,26 +323,64 @@ function AccountCard({ account }: { account: TradingAccount }) {
           </div>
 
           {autoTradeOn && (
-            <div className="mt-3 pt-3 border-t border-indigo-500/20 flex items-center gap-3">
-              <span className="text-xs text-muted-foreground">Risk per trade:</span>
-              <div className="flex gap-1.5">
-                {[0.5, 1, 2, 3].map(pct => (
+            <div className="mt-3 pt-3 border-t border-indigo-500/20 space-y-3">
+              {/* Mode toggle: % vs fixed $ */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Trade size:</span>
+                <div className="flex rounded-lg border border-border overflow-hidden text-xs font-medium">
                   <button
-                    key={pct}
-                    onClick={() => updateAccount.mutate({ id: account.id, riskPercent: pct })}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
-                      (account.riskPercent ?? 1) === pct
-                        ? "border-indigo-500 bg-indigo-500/15 text-indigo-500"
-                        : "border-border text-muted-foreground hover:border-indigo-500/50"
-                    }`}
+                    onClick={() => updateAccount.mutate({ id: account.id, tradeAmount: null })}
+                    className={`px-3 py-1.5 transition-colors ${!account.tradeAmount ? "bg-indigo-500 text-white" : "text-muted-foreground hover:bg-muted"}`}
                   >
-                    {pct}%
+                    % of balance
                   </button>
-                ))}
+                  <button
+                    onClick={() => {
+                      if (!account.tradeAmount) {
+                        const defaultAmt = Math.round((account.balance ?? 1000) * 0.01);
+                        updateAccount.mutate({ id: account.id, tradeAmount: defaultAmt });
+                      }
+                    }}
+                    className={`px-3 py-1.5 transition-colors ${account.tradeAmount ? "bg-indigo-500 text-white" : "text-muted-foreground hover:bg-muted"}`}
+                  >
+                    Fixed $
+                  </button>
+                </div>
               </div>
-              <span className="text-xs text-muted-foreground ml-auto">
-                ≈ {fmt((account.balance ?? 0) * (account.riskPercent ?? 1) / 100, cur)} per trade
-              </span>
+
+              {/* % mode */}
+              {!account.tradeAmount && (
+                <div className="flex items-center gap-3">
+                  <div className="flex gap-1.5">
+                    {[0.5, 1, 2, 3, 5].map(pct => (
+                      <button
+                        key={pct}
+                        onClick={() => updateAccount.mutate({ id: account.id, riskPercent: pct })}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-medium border transition-all ${
+                          (account.riskPercent ?? 1) === pct
+                            ? "border-indigo-500 bg-indigo-500/15 text-indigo-500"
+                            : "border-border text-muted-foreground hover:border-indigo-500/50"
+                        }`}
+                      >
+                        {pct}%
+                      </button>
+                    ))}
+                  </div>
+                  <span className="text-xs text-muted-foreground ml-auto">
+                    ≈ {fmt((account.balance ?? 0) * (account.riskPercent ?? 1) / 100, cur)} risked per trade
+                  </span>
+                </div>
+              )}
+
+              {/* Fixed $ mode */}
+              {account.tradeAmount && (
+                <FixedAmountInput
+                  value={account.tradeAmount}
+                  currency={cur}
+                  balance={account.balance ?? 0}
+                  onSave={(amt) => updateAccount.mutate({ id: account.id, tradeAmount: amt })}
+                />
+              )}
             </div>
           )}
         </div>

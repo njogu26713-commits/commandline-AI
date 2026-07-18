@@ -251,10 +251,12 @@ router.post("/trading-accounts/:id/sync", async (req, res) => {
 router.patch("/trading-accounts/:id", async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { autoTrade, riskPercent } = req.body;
+    const { autoTrade, riskPercent, tradeAmount } = req.body;
     const updates: Record<string, any> = {};
     if (typeof autoTrade === "boolean") updates.autoTrade = autoTrade ? "true" : "false";
     if (typeof riskPercent === "number") updates.riskPercent = Math.min(10, Math.max(0.1, riskPercent));
+    if (tradeAmount === null) updates.tradeAmount = null;                                   // clear fixed amount
+    else if (typeof tradeAmount === "number") updates.tradeAmount = Math.max(1, tradeAmount); // set fixed amount
     if (Object.keys(updates).length === 0) return res.status(400).json({ error: "Nothing to update" });
     const [updated] = await db.update(tradingAccountsTable).set(updates).where(eq(tradingAccountsTable.id, id)).returning();
     if (!updated) return res.status(404).json({ error: "Account not found" });
